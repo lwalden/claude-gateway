@@ -74,7 +74,8 @@ describe('POST /ask — error propagation', () => {
       .send({ prompt: 'test' });
 
     expect(res.status).toBe(502);
-    expect(res.body.error).toBe('CLI and API both failed');
+    // Error is sanitized — unknown messages get a generic response
+    expect(res.body.error).toBe('An internal error occurred while processing your request');
     expect(typeof res.body.durationMs).toBe('number');
   });
 });
