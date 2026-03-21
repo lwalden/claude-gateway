@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/compact-reorient.js",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
