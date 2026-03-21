@@ -18,7 +18,10 @@
 
 ## MVP Goals
 
-<!-- Populated by /aam-brief with Phase 1 deliverables -->
+- Validate `/ask` endpoint works end-to-end (CLI path and API fallback path)
+- Test suite covering core paths: auth, CLI invocation, API fallback, error handling
+- Configurables reviewed and adjusted (timeouts, model, max_tokens, buffer limits)
+- Security hardened: input validation, no secret leakage, safe error responses
 
 ## Behavioral Rules
 
