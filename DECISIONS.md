@@ -41,8 +41,11 @@ Chose: Express over Fastify, Hono, or Koa. Why: widely known, minimal surface ar
 ### CLI-first with API fallback | 2026-03-20 | Status: Active
 Chose: invoke Claude CLI (`claude -p`) as primary path, Anthropic HTTP API as fallback. Why: CLI uses the existing Claude subscription (no per-token cost), API is pay-per-use safety net. Tradeoff: CLI invocation is slower and less controllable than direct API; depends on Claude CLI being installed and authenticated.
 
-### PowerShell encoded commands for CLI invocation | 2026-03-20 | Status: Active
-Chose: PowerShell `-EncodedCommand` (Base64 UTF-16LE) over `cmd.exe /c` or direct `execFile('claude', ...)`. Why: Windows `cmd.exe` mangles quotes in multi-word prompts; `claude` resolves to `claude.cmd` which requires a shell. Encoded commands bypass all quoting issues. Tradeoff: Windows-only approach; would need a Unix path for cross-platform support.
+### PowerShell encoded commands for CLI invocation | 2026-03-20 | Status: Superseded
+Chose: PowerShell `-EncodedCommand` (Base64 UTF-16LE) over `cmd.exe /c` or direct `execFile('claude', ...)`. Why: Windows `cmd.exe` mangles quotes in multi-word prompts; `claude` resolves to `claude.cmd` which requires a shell. Encoded commands bypass all quoting issues. Tradeoff: Windows-only approach; would need a Unix path for cross-platform support. **Superseded by stdin-piped invocation (see below) — EncodedCommand was vulnerable to injection via PowerShell subexpressions.**
+
+### Stdin-piped CLI invocation via cmd.exe | 2026-03-20 | Status: Active
+Chose: `spawn('cmd.exe', ['/c', 'claude', '-p', '-'])` with prompt piped via stdin over PowerShell EncodedCommand. Why: self-review found that interpolating user input into a PowerShell command string allows injection via `$(...)` subexpressions and `$env:` variable expansion. Piping via stdin eliminates all command injection vectors — user input never appears in the command string. System prompt is passed as a separate spawn argument. Tradeoff: relies on `claude -p -` accepting stdin (the `-` flag); still Windows-only.
 
 ### Shared-secret bearer token auth | 2026-03-20 | Status: Active
 Chose: single `GATEWAY_API_KEY` checked via `Authorization: Bearer` header over OAuth, JWT, or no auth. Why: simplest viable auth for a local/personal gateway. Tradeoff: no user identity, no token rotation, no revocation -- fine for single-user local use, insufficient for multi-user or public deployment.
