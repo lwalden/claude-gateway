@@ -1,2 +1,58 @@
-node_modules/
+# ==============================================================================
+# Core .gitignore -- secrets, IDE files, OS artifacts
+# Stack-specific entries are added by /setup based on your tech stack.
+# For comprehensive language gitignores, see: https://github.com/github/gitignore
+# ==============================================================================
+
+# Secrets and environment variables -- NEVER commit these
 .env
+.env.local
+.env.*.local
+*.env
+.envrc
+.secrets
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+local.settings.json
+
+# IDE and editor artifacts
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.vs/
+*.user
+*.suo
+
+# OS generated
+.DS_Store
+._*
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Claude Code auto memory (project-specific, not for version control)
+# Uncomment if you use Claude Code's auto memory feature:
+# .claude/memory/
+
+# Stack-specific entries added below by /setup:
+
+# Node.js
+node_modules/
+dist/
+build/
+.next/
+*.tsbuildinfo
