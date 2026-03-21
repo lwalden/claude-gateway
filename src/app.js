@@ -5,6 +5,20 @@ const express = require('express');
 const { ask } = require('./claude');
 
 const MAX_PROMPT_LENGTH = 100_000; // ~100K chars — well above normal use, prevents abuse
+const MAX_SYSTEM_LENGTH = 100_000;
+const MAX_MODEL_LENGTH = 256;
+
+/**
+ * Constant-time token comparison using HMAC digests.
+ * Normalizes to fixed-length hashes so neither value length nor content leaks via timing.
+ */
+function tokensMatch(a, b) {
+  if (!a || !b) return false;
+  const key = crypto.randomBytes(32);
+  const hmacA = crypto.createHmac('sha256', key).update(a).digest();
+  const hmacB = crypto.createHmac('sha256', key).update(b).digest();
+  return crypto.timingSafeEqual(hmacA, hmacB);
+}
 
 function createApp({ gatewayApiKey } = {}) {
   const apiKey = gatewayApiKey || process.env.GATEWAY_API_KEY || '';
@@ -12,15 +26,14 @@ function createApp({ gatewayApiKey } = {}) {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
 
-  // --- Auth middleware (timing-safe comparison) ---
+  // --- Auth middleware (constant-time HMAC comparison) ---
   function requireAuth(req, res, next) {
     if (!apiKey) {
       return res.status(500).json({ error: 'GATEWAY_API_KEY is not set on the server' });
     }
     const auth = req.headers['authorization'] || '';
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-    if (!token || token.length !== apiKey.length ||
-        !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(apiKey))) {
+    if (!tokensMatch(token, apiKey)) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
     next();
@@ -44,8 +57,14 @@ function createApp({ gatewayApiKey } = {}) {
     if (system !== undefined && typeof system !== 'string') {
       return res.status(400).json({ error: 'system must be a string if provided' });
     }
+    if (typeof system === 'string' && system.length > MAX_SYSTEM_LENGTH) {
+      return res.status(400).json({ error: `system exceeds maximum length of ${MAX_SYSTEM_LENGTH} characters` });
+    }
     if (model !== undefined && typeof model !== 'string') {
       return res.status(400).json({ error: 'model must be a string if provided' });
+    }
+    if (typeof model === 'string' && model.length > MAX_MODEL_LENGTH) {
+      return res.status(400).json({ error: `model exceeds maximum length of ${MAX_MODEL_LENGTH} characters` });
     }
 
     const startMs = Date.now();
@@ -57,11 +76,15 @@ function createApp({ gatewayApiKey } = {}) {
       res.json({ ...result, durationMs });
     } catch (err) {
       const durationMs = Date.now() - startMs;
-      console.error(`[ask] error after ${durationMs}ms:`, err.message);
-      // Sanitize: don't forward raw API error bodies to caller
       const safeMessage = sanitizeErrorMessage(err.message);
+      console.error(`[ask] error after ${durationMs}ms:`, safeMessage);
       res.status(502).json({ error: safeMessage, durationMs });
     }
+  });
+
+  // --- JSON 404 for unregistered routes ---
+  app.use((req, res) => {
+    res.status(404).json({ error: 'Not Found' });
   });
 
   return app;
@@ -87,7 +110,5 @@ function sanitizeErrorMessage(message) {
   // Generic fallback for unexpected errors
   return 'An internal error occurred while processing your request';
 }
-
-module.exports = { createApp };
 
 module.exports = { createApp };

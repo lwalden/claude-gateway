@@ -1,9 +1,8 @@
-const { execFile } = require('child_process');
-const { promisify } = require('util');
+const { EventEmitter } = require('events');
+const { PassThrough } = require('stream');
 
-// Mock child_process before requiring claude.js
 jest.mock('child_process', () => ({
-  execFile: jest.fn()
+  spawn: jest.fn()
 }));
 
 // Mock global fetch for API fallback tests
@@ -13,25 +12,39 @@ global.fetch = jest.fn();
 process.env.ANTHROPIC_API_KEY = 'test-api-key';
 process.env.ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
 
+const { spawn } = require('child_process');
 const { ask } = require('../src/claude');
 
-// Helper: make execFile callback-style mock resolve
+function createMockChild({ stdout = '', stderr = '', code = 0, signal = null, error = null } = {}) {
+  const child = new EventEmitter();
+  child.stdout = new PassThrough();
+  child.stderr = new PassThrough();
+  child.stdin = new PassThrough();
+
+  // Write data then emit close after streams drain
+  setImmediate(() => {
+    if (error) {
+      child.emit('error', error);
+      return;
+    }
+    child.stdout.end(stdout);
+    child.stderr.end(stderr);
+    // Emit close after stdout ends so all data events fire first
+    child.stdout.on('end', () => {
+      setImmediate(() => child.emit('close', code, signal));
+    });
+  });
+
+  return child;
+}
+
 function mockCliSuccess(stdout) {
-  execFile.mockImplementation((cmd, args, opts, cb) => {
-    if (typeof opts === 'function') { cb = opts; opts = {}; }
-    cb(null, { stdout });
-  });
+  spawn.mockImplementation(() => createMockChild({ stdout }));
 }
 
-function mockCliFailure(err) {
-  execFile.mockImplementation((cmd, args, opts, cb) => {
-    if (typeof opts === 'function') { cb = opts; opts = {}; }
-    cb(err);
-  });
+function mockCliFailure({ stderr = '', code = 1, signal = null, error = null } = {}) {
+  spawn.mockImplementation(() => createMockChild({ stderr, code, signal, error }));
 }
-
-// promisify wraps execFile, so we need the mock to work with callbacks
-// Jest's mock of execFile is already callback-based; promisify will wrap it
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -47,20 +60,41 @@ describe('ask() — CLI path', () => {
       source: 'cli',
       model: 'subscription'
     });
-    expect(execFile).toHaveBeenCalled();
+    expect(spawn).toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  test('passes system prompt to CLI when provided', async () => {
+  test('pipes prompt via stdin (not interpolated into command)', async () => {
+    const stdinChunks = [];
+    spawn.mockImplementation(() => {
+      const child = createMockChild({ stdout: 'response' });
+      const origWrite = child.stdin.write.bind(child.stdin);
+      child.stdin.write = (chunk, enc, cb) => {
+        stdinChunks.push(chunk.toString());
+        return origWrite(chunk, enc, cb);
+      };
+      return child;
+    });
+
+    await ask({ prompt: 'test prompt with "quotes" and $(injection)' });
+    expect(stdinChunks.join('')).toBe('test prompt with "quotes" and $(injection)');
+  });
+
+  test('passes system prompt as CLI argument when provided', async () => {
     mockCliSuccess('response');
 
     await ask({ prompt: 'test', system: 'be helpful' });
-    const call = execFile.mock.calls[0];
-    // The encoded command (args[3]) should contain the system prompt flag
-    const encoded = call[1][3]; // -EncodedCommand value
-    const decoded = Buffer.from(encoded, 'base64').toString('utf16le');
-    expect(decoded).toContain('--append-system-prompt');
-    expect(decoded).toContain('be helpful');
+    const spawnArgs = spawn.mock.calls[0][1];
+    expect(spawnArgs).toContain('--append-system-prompt');
+    expect(spawnArgs).toContain('be helpful');
+  });
+
+  test('does not include system flag when system is not provided', async () => {
+    mockCliSuccess('response');
+
+    await ask({ prompt: 'test' });
+    const spawnArgs = spawn.mock.calls[0][1];
+    expect(spawnArgs).not.toContain('--append-system-prompt');
   });
 });
 
@@ -72,10 +106,8 @@ describe('ask() — CLI failure triggers API fallback', () => {
     });
   }
 
-  test('falls back to API when CLI times out', async () => {
-    const err = new Error('timeout');
-    err.killed = true;
-    mockCliFailure(err);
+  test('falls back to API when CLI times out (killed signal)', async () => {
+    mockCliFailure({ signal: 'SIGTERM' });
     mockApiSuccess();
 
     const result = await ask({ prompt: 'test' });
@@ -84,10 +116,10 @@ describe('ask() — CLI failure triggers API fallback', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  test('falls back to API when CLI is not found (ENOENT)', async () => {
-    const err = new Error('spawn powershell.exe ENOENT');
+  test('falls back to API when CLI spawn errors (ENOENT)', async () => {
+    const err = new Error('spawn cmd.exe ENOENT');
     err.code = 'ENOENT';
-    mockCliFailure(err);
+    mockCliFailure({ error: err });
     mockApiSuccess();
 
     const result = await ask({ prompt: 'test' });
@@ -102,8 +134,16 @@ describe('ask() — CLI failure triggers API fallback', () => {
     expect(result.source).toBe('api');
   });
 
+  test('falls back to API when CLI exits with non-zero code', async () => {
+    mockCliFailure({ code: 1, stderr: 'some error' });
+    mockApiSuccess();
+
+    const result = await ask({ prompt: 'test' });
+    expect(result.source).toBe('api');
+  });
+
   test('uses caller-specified model for API fallback', async () => {
-    mockCliFailure(new Error('cli down'));
+    mockCliFailure({ code: 1 });
     mockApiSuccess();
 
     await ask({ prompt: 'test', model: 'claude-haiku-4-5-20251001' });
@@ -112,7 +152,7 @@ describe('ask() — CLI failure triggers API fallback', () => {
   });
 
   test('uses default model when none specified', async () => {
-    mockCliFailure(new Error('cli down'));
+    mockCliFailure({ code: 1 });
     mockApiSuccess();
 
     const result = await ask({ prompt: 'test' });
@@ -120,7 +160,7 @@ describe('ask() — CLI failure triggers API fallback', () => {
   });
 
   test('sends system prompt to API when provided', async () => {
-    mockCliFailure(new Error('cli down'));
+    mockCliFailure({ code: 1 });
     mockApiSuccess();
 
     await ask({ prompt: 'test', system: 'be concise' });
@@ -131,7 +171,7 @@ describe('ask() — CLI failure triggers API fallback', () => {
 
 describe('ask() — API path failures', () => {
   test('throws when both CLI and API fail', async () => {
-    mockCliFailure(new Error('cli down'));
+    mockCliFailure({ code: 1 });
     fetch.mockResolvedValue({
       ok: false,
       status: 500,
@@ -143,19 +183,30 @@ describe('ask() — API path failures', () => {
 
   test('throws when CLI fails and no ANTHROPIC_API_KEY', async () => {
     const originalKey = process.env.ANTHROPIC_API_KEY;
-    process.env.ANTHROPIC_API_KEY = '';
-
-    // Need to re-require to pick up env change — but module is cached.
-    // Instead, test indirectly: the module reads env at load time.
-    // We'll test this by creating a fresh module instance.
-    jest.resetModules();
-    jest.mock('child_process', () => ({
-      execFile: jest.fn((cmd, args, opts, cb) => {
-        if (typeof opts === 'function') { cb = opts; opts = {}; }
-        cb(new Error('cli down'));
-      })
-    }));
     delete process.env.ANTHROPIC_API_KEY;
+
+    jest.resetModules();
+
+    jest.mock('child_process', () => {
+      const { PassThrough, } = require('stream');
+      const { EventEmitter } = require('events');
+      return {
+        spawn: jest.fn(() => {
+          const child = new EventEmitter();
+          child.stdout = new PassThrough();
+          child.stderr = new PassThrough();
+          child.stdin = new PassThrough();
+          setImmediate(() => {
+            child.stdout.end('');
+            child.stderr.end('cli down');
+            child.stdout.on('end', () => {
+              setImmediate(() => child.emit('close', 1, null));
+            });
+          });
+          return child;
+        })
+      };
+    });
 
     const { ask: freshAsk } = require('../src/claude');
     await expect(freshAsk({ prompt: 'test' })).rejects.toThrow(/ANTHROPIC_API_KEY is not set/);
@@ -164,7 +215,7 @@ describe('ask() — API path failures', () => {
   });
 
   test('throws when API returns empty content', async () => {
-    mockCliFailure(new Error('cli down'));
+    mockCliFailure({ code: 1 });
     fetch.mockResolvedValue({
       ok: true,
       json: async () => ({ content: [] })

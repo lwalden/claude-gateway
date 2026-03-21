@@ -50,6 +50,20 @@ describe('System and model type validation', () => {
     expect(res.body.error).toMatch(/model must be a string/);
   });
 
+  test('rejects system exceeding 100K characters', async () => {
+    const res = await authed(request(app).post('/ask'))
+      .send({ prompt: 'hello', system: 'a'.repeat(100_001) });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/system exceeds maximum length/);
+  });
+
+  test('rejects model exceeding 256 characters', async () => {
+    const res = await authed(request(app).post('/ask'))
+      .send({ prompt: 'hello', model: 'a'.repeat(257) });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/model exceeds maximum length/);
+  });
+
   test('accepts undefined system and model (optional)', async () => {
     mockAsk.mockResolvedValue({ response: 'ok', source: 'cli', model: 'subscription' });
     const res = await authed(request(app).post('/ask'))

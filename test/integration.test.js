@@ -81,8 +81,9 @@ describe('POST /ask — error propagation', () => {
 });
 
 describe('Unknown routes', () => {
-  test('returns 404 for unregistered paths', async () => {
+  test('returns JSON 404 for unregistered paths', async () => {
     const res = await request(app).get('/nonexistent');
     expect(res.status).toBe(404);
+    expect(res.body.error).toBe('Not Found');
   });
 });
