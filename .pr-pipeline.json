@@ -32,6 +32,6 @@
     "pollIntervalSeconds": 30,
     "timeoutMinutes": 15
   },
-  "autoContinueSprint": false,
+  "autoContinueSprint": true,
   "continueMaxIssues": null
 }
