@@ -1,5 +1,6 @@
 // claude-gateway — local HTTP service for CLI-first, API-fallback Claude access
 
+const crypto = require('crypto');
 const express = require('express');
 const { ask } = require('./claude');
 
@@ -19,14 +20,16 @@ const GATEWAY_API_KEY = process.env.GATEWAY_API_KEY || '';
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 
-// --- Auth middleware ---
+// --- Auth middleware (constant-time comparison) ---
 function requireAuth(req, res, next) {
   if (!GATEWAY_API_KEY) {
     return res.status(500).json({ error: 'GATEWAY_API_KEY is not set on the server' });
   }
   const auth = req.headers['authorization'] || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  if (token !== GATEWAY_API_KEY) {
+  const tokenBuf = Buffer.from(token);
+  const keyBuf = Buffer.from(GATEWAY_API_KEY);
+  if (tokenBuf.length !== keyBuf.length || !crypto.timingSafeEqual(tokenBuf, keyBuf)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   next();
@@ -47,6 +50,15 @@ app.post('/ask', requireAuth, async (req, res) => {
   if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
     return res.status(400).json({ error: 'prompt is required and must be a non-empty string' });
   }
+  if (prompt.length > 100_000) {
+    return res.status(400).json({ error: 'prompt exceeds maximum length (100,000 characters)' });
+  }
+  if (system !== undefined && (typeof system !== 'string' || system.length > 10_000)) {
+    return res.status(400).json({ error: 'system must be a string under 10,000 characters' });
+  }
+  if (model !== undefined && (typeof model !== 'string' || model.length > 100 || !/^[a-zA-Z0-9._-]+$/.test(model))) {
+    return res.status(400).json({ error: 'model must be alphanumeric (with hyphens/dots) and under 100 characters' });
+  }
 
   const startMs = Date.now();
 
@@ -58,7 +70,7 @@ app.post('/ask', requireAuth, async (req, res) => {
   } catch (err) {
     const durationMs = Date.now() - startMs;
     console.error(`[ask] error after ${durationMs}ms:`, err.message);
-    res.status(502).json({ error: err.message, durationMs });
+    res.status(502).json({ error: 'Upstream service error', durationMs });
   }
 });
 
