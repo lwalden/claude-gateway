@@ -9,6 +9,7 @@ const execFileAsync = promisify(execFile);
 const CLI_TIMEOUT_MS = parseInt(process.env.CLI_TIMEOUT_MS || '30000', 10);
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-6';
+const API_FALLBACK_ENABLED = (process.env.API_FALLBACK_ENABLED ?? 'true') === 'true';
 
 /**
  * Ask Claude a question.
@@ -53,9 +54,16 @@ async function ask({ prompt, system, model }) {
     }
   }
 
-  // --- Attempt 2: Anthropic API ---
+  // --- Attempt 2: Anthropic API (feature-flagged) ---
+  if (!API_FALLBACK_ENABLED) {
+    const err = new Error('CLI unavailable and API fallback is disabled');
+    err.code = 'FALLBACK_DISABLED';
+    throw err;
+  }
   if (!ANTHROPIC_API_KEY) {
-    throw new Error('Claude CLI unavailable and ANTHROPIC_API_KEY is not set — cannot fulfill request');
+    const err = new Error('CLI unavailable and ANTHROPIC_API_KEY is not set');
+    err.code = 'FALLBACK_DISABLED';
+    throw err;
   }
 
   const resolvedModel = model || ANTHROPIC_MODEL;

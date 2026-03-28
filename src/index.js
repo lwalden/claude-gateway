@@ -70,7 +70,11 @@ app.post('/ask', requireAuth, async (req, res) => {
   } catch (err) {
     const durationMs = Date.now() - startMs;
     console.error(`[ask] error after ${durationMs}ms:`, err.message);
-    res.status(502).json({ error: 'Upstream service error', durationMs });
+    if (err.code === 'FALLBACK_DISABLED') {
+      res.status(503).json({ error: 'Claude CLI unavailable', durationMs });
+    } else {
+      res.status(502).json({ error: 'Upstream service error', durationMs });
+    }
   }
 });
 
