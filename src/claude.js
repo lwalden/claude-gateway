@@ -21,34 +21,36 @@ const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-6';
  * @returns {Promise<{ response: string, source: 'cli'|'api', model: string }>}
  */
 async function ask({ prompt, system, model }) {
-  // --- Attempt 1: Claude CLI ---
-  try {
-    // On Windows, claude resolves to claude.cmd which requires a shell to execute.
-    // cmd.exe doesn't quote arguments so multi-word prompts get split.
-    // PowerShell -EncodedCommand accepts Base64-encoded UTF-16LE commands,
-    // completely bypassing quoting issues regardless of prompt content.
-    let cliCmd = `claude -p "${prompt.replace(/"/g, '`"')}"`;
-    if (system) cliCmd += ` --append-system-prompt "${system.replace(/"/g, '`"')}"`;
+  // --- Attempt 1: Claude CLI (skipped in container mode — no PowerShell/subscription) ---
+  if (process.env.CONTAINER_MODE !== 'true') {
+    try {
+      // On Windows, claude resolves to claude.cmd which requires a shell to execute.
+      // cmd.exe doesn't quote arguments so multi-word prompts get split.
+      // PowerShell -EncodedCommand accepts Base64-encoded UTF-16LE commands,
+      // completely bypassing quoting issues regardless of prompt content.
+      let cliCmd = `claude -p "${prompt.replace(/"/g, '`"')}"`;
+      if (system) cliCmd += ` --append-system-prompt "${system.replace(/"/g, '`"')}"`;
 
-    const encoded = Buffer.from(cliCmd, 'utf16le').toString('base64');
+      const encoded = Buffer.from(cliCmd, 'utf16le').toString('base64');
 
-    const { stdout } = await execFileAsync(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
-      {
-        timeout: CLI_TIMEOUT_MS,
-        maxBuffer: 10 * 1024 * 1024,
-        cwd: os.homedir() // neutral cwd — prevents CLAUDE.md project context from interfering
-      }
-    );
+      const { stdout } = await execFileAsync(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+        {
+          timeout: CLI_TIMEOUT_MS,
+          maxBuffer: 10 * 1024 * 1024,
+          cwd: os.homedir() // neutral cwd — prevents CLAUDE.md project context from interfering
+        }
+      );
 
-    const response = stdout.trim();
-    if (!response) throw new Error('CLI returned empty response');
+      const response = stdout.trim();
+      if (!response) throw new Error('CLI returned empty response');
 
-    return { response, source: 'cli', model: 'subscription' };
-  } catch (cliErr) {
-    const reason = cliErr.killed ? 'timeout' : cliErr.code === 'ENOENT' ? 'not found' : cliErr.message;
-    console.warn(`[claude] CLI failed (${reason}), falling back to API`);
+      return { response, source: 'cli', model: 'subscription' };
+    } catch (cliErr) {
+      const reason = cliErr.killed ? 'timeout' : cliErr.code === 'ENOENT' ? 'not found' : cliErr.message;
+      console.warn(`[claude] CLI failed (${reason}), falling back to API`);
+    }
   }
 
   // --- Attempt 2: Anthropic API ---
@@ -76,8 +78,9 @@ async function ask({ prompt, system, model }) {
   });
 
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Anthropic API error ${res.status}: ${err}`);
+    const errBody = await res.text();
+    console.error(`[claude] Anthropic API error ${res.status}:`, errBody);
+    throw new Error('Upstream API request failed');
   }
 
   const data = await res.json();
