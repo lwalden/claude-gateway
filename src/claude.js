@@ -1,58 +1,14 @@
 // claude.js — CLI-first, API-fallback Claude invocation
 
-const { spawn } = require('child_process');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const os = require('os');
+
+const execFileAsync = promisify(execFile);
 
 const CLI_TIMEOUT_MS = parseInt(process.env.CLI_TIMEOUT_MS || '30000', 10);
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-6';
-
-/**
- * Invoke Claude CLI by piping the prompt via stdin.
- * Avoids interpolating user input into a command string (prevents injection).
- * Uses cmd.exe /c to resolve claude.cmd, with prompt delivered safely via stdin.
- */
-function invokeCli({ prompt, system }) {
-  return new Promise((resolve, reject) => {
-    const args = ['/c', 'claude', '-p', '-'];
-    if (system) args.push('--append-system-prompt', system);
-
-    const child = spawn('cmd.exe', args, {
-      timeout: CLI_TIMEOUT_MS,
-      cwd: os.homedir(),
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true
-    });
-
-    const chunks = [];
-    let stderrData = '';
-    let totalBytes = 0;
-    const MAX_OUTPUT = 10 * 1024 * 1024;
-
-    child.stdout.on('data', (chunk) => {
-      totalBytes += chunk.length;
-      if (totalBytes <= MAX_OUTPUT) chunks.push(chunk);
-    });
-    child.stderr.on('data', (chunk) => { stderrData += chunk.toString(); });
-
-    child.on('error', reject);
-    child.on('close', (code, signal) => {
-      if (signal === 'SIGTERM' || signal === 'SIGKILL') {
-        const err = new Error('CLI timeout');
-        err.killed = true;
-        return reject(err);
-      }
-      if (code !== 0) {
-        return reject(new Error(stderrData.trim() || `CLI exited with code ${code}`));
-      }
-      resolve(Buffer.concat(chunks).toString('utf8'));
-    });
-
-    // Pipe prompt via stdin — no shell interpolation
-    child.stdin.write(prompt);
-    child.stdin.end();
-  });
-}
 
 /**
  * Ask Claude a question.
@@ -65,16 +21,36 @@ function invokeCli({ prompt, system }) {
  * @returns {Promise<{ response: string, source: 'cli'|'api', model: string }>}
  */
 async function ask({ prompt, system, model }) {
-  // --- Attempt 1: Claude CLI (prompt piped via stdin, not interpolated) ---
-  try {
-    const stdout = await invokeCli({ prompt, system });
-    const response = stdout.trim();
-    if (!response) throw new Error('CLI returned empty response');
+  // --- Attempt 1: Claude CLI (skipped in container mode — no PowerShell/subscription) ---
+  if (process.env.CONTAINER_MODE !== 'true') {
+    try {
+      // On Windows, claude resolves to claude.cmd which requires a shell to execute.
+      // cmd.exe doesn't quote arguments so multi-word prompts get split.
+      // PowerShell -EncodedCommand accepts Base64-encoded UTF-16LE commands,
+      // completely bypassing quoting issues regardless of prompt content.
+      let cliCmd = `claude -p "${prompt.replace(/"/g, '`"')}"`;
+      if (system) cliCmd += ` --append-system-prompt "${system.replace(/"/g, '`"')}"`;
 
-    return { response, source: 'cli', model: 'subscription' };
-  } catch (cliErr) {
-    const reason = cliErr.killed ? 'timeout' : cliErr.code === 'ENOENT' ? 'not found' : cliErr.message;
-    console.warn(`[claude] CLI failed (${reason}), falling back to API`);
+      const encoded = Buffer.from(cliCmd, 'utf16le').toString('base64');
+
+      const { stdout } = await execFileAsync(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+        {
+          timeout: CLI_TIMEOUT_MS,
+          maxBuffer: 10 * 1024 * 1024,
+          cwd: os.homedir() // neutral cwd — prevents CLAUDE.md project context from interfering
+        }
+      );
+
+      const response = stdout.trim();
+      if (!response) throw new Error('CLI returned empty response');
+
+      return { response, source: 'cli', model: 'subscription' };
+    } catch (cliErr) {
+      const reason = cliErr.killed ? 'timeout' : cliErr.code === 'ENOENT' ? 'not found' : cliErr.message;
+      console.warn(`[claude] CLI failed (${reason}), falling back to API`);
+    }
   }
 
   // --- Attempt 2: Anthropic API ---
@@ -102,8 +78,9 @@ async function ask({ prompt, system, model }) {
   });
 
   if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Anthropic API error ${res.status}: ${err}`);
+    const errBody = await res.text();
+    console.error(`[claude] Anthropic API error ${res.status}:`, errBody);
+    throw new Error('Upstream API request failed');
   }
 
   const data = await res.json();

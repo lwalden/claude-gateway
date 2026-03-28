@@ -1,28 +1,6 @@
 {
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .claude/hooks/compact-reorient.js",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node .claude/hooks/pr-pipeline-trigger.js",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
+  "statusLine": {
+    "type": "command",
+    "command": "bash .claude/scripts/context-monitor.sh"
   }
 }
