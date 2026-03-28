@@ -48,6 +48,9 @@ temp/
 # Uncomment if you use Claude Code's auto memory feature:
 # .claude/memory/
 
+# Infrastructure scripts (contain Azure resource IDs)
+scripts/
+
 # Stack-specific entries added below by /setup:
 
 # Node.js

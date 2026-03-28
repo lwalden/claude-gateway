@@ -14,8 +14,8 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/gateway
-  AZURE_RESOURCE_GROUP: accessishield-rg
-  CONTAINER_APP_NAME: claude-gateway
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  CONTAINER_APP_NAME: ${{ vars.CONTAINER_APP_NAME }}
 
 jobs:
   build-and-push:

@@ -2,8 +2,10 @@ node_modules
 .env
 .env.*
 .git
+.github
 .claude
 docs
+scripts
 *.md
 .gitignore
 .context-usage

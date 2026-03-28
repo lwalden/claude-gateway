@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const { ask } = require('./claude');
 
 // Load .env from project root (same directory as package.json)
@@ -35,6 +36,15 @@ function requireAuth(req, res, next) {
   next();
 }
 
+// --- Rate limiting (per IP, applies to /ask) ---
+const askLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, try again later' }
+});
+
 // --- Health check (no auth required) ---
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'claude-gateway' });
@@ -44,7 +54,7 @@ app.get('/health', (req, res) => {
 // POST /ask
 // Body: { prompt: string, system?: string, model?: string }
 // Response: { response: string, source: "cli"|"api", model: string }
-app.post('/ask', requireAuth, async (req, res) => {
+app.post('/ask', askLimiter, requireAuth, async (req, res) => {
   const { prompt, system, model } = req.body || {};
 
   if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {

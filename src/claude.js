@@ -28,8 +28,11 @@ async function ask({ prompt, system, model }) {
       // cmd.exe doesn't quote arguments so multi-word prompts get split.
       // PowerShell -EncodedCommand accepts Base64-encoded UTF-16LE commands,
       // completely bypassing quoting issues regardless of prompt content.
-      let cliCmd = `claude -p "${prompt.replace(/"/g, '`"')}"`;
-      if (system) cliCmd += ` --append-system-prompt "${system.replace(/"/g, '`"')}"`;
+      // Escape both double quotes and $ (prevents subexpression injection like $(cmd)).
+      const escapePS = (s) => s.replace(/`/g, '``').replace(/\$/g, '`$').replace(/"/g, '`"');
+      let cliCmd = `claude -p "${escapePS(prompt)}"`;
+      if (system) cliCmd += ` --append-system-prompt "${escapePS(system)}"`;
+
 
       const encoded = Buffer.from(cliCmd, 'utf16le').toString('base64');
 
