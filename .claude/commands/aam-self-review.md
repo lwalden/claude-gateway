@@ -17,13 +17,14 @@ If the diff is empty: tell the user "No changes vs main — nothing to review."
 Also read:
 - `.claude/rules/architecture-fitness.md` if it exists (structural constraints to enforce)
 - `.claude/rules/code-quality.md` if it exists (quality standards for this project)
-- `docs/strategy-roadmap.md` Quality Tier section (to calibrate review depth)
 
 ---
 
 ## Step 2: Choose Review Lens
 
-Ask the user which lens to apply (or accept all three for a full review):
+During autonomous sprint execution: always run all three lenses — do not ask.
+
+When invoked manually, ask the user which lens to apply (or accept all three for a full review):
 
 **A) Security** — injection, auth bypass, data exposure, hardcoded secrets
 **B) Performance** — N+1 queries, unbounded loops, missing indexes, blocking I/O
@@ -111,9 +112,7 @@ After all subagents complete:
 
 2. **If High severity issues found:** Do not proceed to PR. Fix the issues and re-run `/aam-self-review` or `/aam-quality-gate`.
 
-3. **If Medium/Low issues only:** Ask the user: "Medium/Low issues found. Fix before PR, or proceed with issues noted in PR description? (fix / proceed)"
-   - If fix: address issues, then proceed to PR creation.
-   - If proceed: add a "Review Notes" section to the PR description listing the known issues.
+3. **If Medium/Low issues only:** During autonomous sprint execution, fix them — do not ask whether to proceed. When invoked manually, ask the user: "Medium/Low issues found. Fix before PR, or proceed with issues noted in PR description? (fix / proceed)"
 
 4. **If no issues:** Proceed directly to PR creation.
 
@@ -121,6 +120,6 @@ After all subagents complete:
 
 ## Integration with Sprint Workflow
 
-`/aam-self-review` is called by the sprint workflow before PR creation for **Rigorous** and **Comprehensive** quality tiers. For **Standard** tier it's optional. For **Lightweight** tier it's skipped.
+`/aam-self-review` is called by the sprint workflow before PR creation for every item. During autonomous sprint execution, address all findings by fixing them — do not prompt. Fix Medium/Low findings as well.
 
 You can also invoke it manually at any time with `/aam-self-review`.

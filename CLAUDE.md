@@ -32,14 +32,14 @@ See `.claude/rules/git-workflow.md` — loaded natively by Claude Code each sess
 
 **Only when explicitly asked:** Merge PRs
 
-**Ask the human first:** Sign up for services, provide API keys
+**Ask the human first:** Create GitHub repos, sign up for services, provide API keys, approve major architectural changes
 
 **Tool-first rule:** See `.claude/rules/tool-first.md` — never ask the user to do something you can do with a tool
 
 ### Verification-First Development
 
-- Write tests appropriate to the project's quality tier (see strategy-roadmap.md)
-- When Standard tier or above: write failing tests first, then implement
+- Write failing tests first, then implement
+- Run the full test suite before every commit
 
 ### Decision Recording
 
