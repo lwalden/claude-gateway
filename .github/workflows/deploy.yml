@@ -1,0 +1,87 @@
+name: Deploy Gateway
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy.yml'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/gateway
+  AZURE_RESOURCE_GROUP: accessishield-rg
+  CONTAINER_APP_NAME: claude-gateway
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+
+    steps:
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Configure GHCR registry on Container App
+        run: |
+          az containerapp registry set \
+            -g ${{ env.AZURE_RESOURCE_GROUP }} \
+            -n ${{ env.CONTAINER_APP_NAME }} \
+            --server ${{ env.REGISTRY }} \
+            --username ${{ github.actor }} \
+            --password ${{ secrets.GHCR_PAT }}
+
+      - name: Deploy to Container App
+        uses: azure/container-apps-deploy-action@v1
+        with:
+          resourceGroup: ${{ env.AZURE_RESOURCE_GROUP }}
+          containerAppName: ${{ env.CONTAINER_APP_NAME }}
+          imageToDeploy: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Verify deployment
+        run: |
+          echo "Waiting for container to start..."
+          sleep 15
+          FQDN=$(az containerapp show \
+            -g ${{ env.AZURE_RESOURCE_GROUP }} \
+            -n ${{ env.CONTAINER_APP_NAME }} \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "Gateway FQDN: $FQDN"
+          # Internal-only ingress — cannot curl from GitHub Actions runner.
+          # Health is verified by the Azure Container App liveness probe.
+          echo "Internal ingress — health check delegated to Azure liveness probe."
