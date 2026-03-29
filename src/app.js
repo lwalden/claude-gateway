@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const express = require('express');
 const { ask } = require('./claude');
+const { log, requestLogger } = require('./logger');
 
 const MAX_PROMPT_LENGTH = 100_000; // ~100K chars — well above normal use, prevents abuse
 const MAX_SYSTEM_LENGTH = 100_000;
@@ -25,6 +26,7 @@ function createApp({ gatewayApiKey } = {}) {
 
   const app = express();
   app.use(express.json({ limit: '1mb' }));
+  app.use(requestLogger);
 
   // --- Auth middleware (constant-time HMAC comparison) ---
   function requireAuth(req, res, next) {
@@ -73,11 +75,13 @@ function createApp({ gatewayApiKey } = {}) {
       const result = await ask({ prompt: prompt.trim(), system, model });
       const durationMs = Date.now() - startMs;
       console.log(`[ask] source=${result.source} duration=${durationMs}ms`);
+      res._logMeta = { source: result.source, model: result.model };
       res.json({ ...result, durationMs });
     } catch (err) {
       const durationMs = Date.now() - startMs;
       const safeMessage = sanitizeErrorMessage(err.message);
       console.error(`[ask] error after ${durationMs}ms:`, safeMessage);
+      res._logMeta = { error: safeMessage };
       res.status(502).json({ error: safeMessage, durationMs });
     }
   });
