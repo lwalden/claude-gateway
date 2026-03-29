@@ -11,8 +11,8 @@ Sprint governance (bounded scope, approval gates, review/archive) tracks in `SPR
 
 ```
 PLAN → SPEC → APPROVE → [per item: EXECUTE → TEST → REVIEW → MERGE → VALIDATE] → COMPLETE
-                                                    ↑
-                                             CONTEXT_CYCLE (at NEXT transition)
+                                         ↑
+                              CONTEXT_CYCLE (hook-enforced, any tool call)
 ```
 
 **Human checkpoints** (pause for input): PLAN (approve issues), APPROVE (approve specs), BLOCKED, REWORK.
@@ -70,6 +70,7 @@ Write detailed spec per item before coding.
 **Post-Merge Validation:** {deploy-dependent tests, or "None"}
 **Files:** Create: {list} | Modify: {list}
 **Dependencies:** {other items, or "None"}
+**Upgrade Impact:** {if upgrading an SDK/package that changes API versions: list all integration points to verify — webhook endpoints, API clients, serialization contracts, config files. Or "N/A"}
 **Custom Instructions:** {human-provided, or "None"}
 ```
 
@@ -77,7 +78,7 @@ Present all specs together. User may: approve all, revise items, add custom inst
 
 ## APPROVE
 
-1. Update `SPRINT.md` status to `in-progress`.
+1. Run `bash .claude/scripts/sprint-update.sh sprint-status in-progress` to update sprint status.
 2. Create native Task per issue (title with risk tag, description: AC + spec summary + issue ID, dependencies from spec).
 3. Confirm: "Sprint S{n} started. {count} tasks. Beginning execution."
 
@@ -85,7 +86,7 @@ Present all specs together. User may: approve all, revise items, add custom inst
 
 ## EXECUTE
 
-1. Update Task to `in_progress`, SPRINT.md row to `in-progress`.
+1. Update Task to `in_progress`. Run `bash .claude/scripts/sprint-update.sh status S{n}-{seq} in-progress`.
 2. Read spec + relevant source files.
 3. Branch: `{type}/S{n}-{seq}-{short-desc}`.
 4. TDD RED → TDD GREEN → Refactor → Integration/E2E if spec defines → Full test suite (zero failures; investigate unrelated failures as regressions).
@@ -107,14 +108,14 @@ Present all specs together. User may: approve all, revise items, add custom inst
 
 ## MERGE
 
-1. `git checkout main && git pull`. 2. Update Task to `completed`, SPRINT.md row to `done`. 3. Check spec for post-merge validation.
+1. `git checkout main && git pull`. 2. Update Task to `completed`. Run `bash .claude/scripts/sprint-update.sh status S{n}-{seq} done`. 3. Check spec for post-merge validation.
 
 → Post-merge exists → VALIDATE. None → NEXT.
 
 ## VALIDATE
 
 1. If deployed env needed, poll availability (max 15 min; if exceeded, notify human, continue to NEXT — Post-Merge stays `pending`, **sprint cannot close until validated**).
-2. Run post-merge tests. Update SPRINT.md Post-Merge: `pass`, `fail`, or `pending`. A `pending` validation is a blocking obligation, not informational.
+2. Run post-merge tests. Run `bash .claude/scripts/sprint-update.sh postmerge S{n}-{seq} pass` (or `fail` / `pending: {desc}`). A `pending` validation is a blocking obligation, not informational.
 
 → Pass → NEXT. Fail → REWORK. Deferred → NEXT (pending remains).
 
@@ -128,9 +129,11 @@ Present all specs together. User may: approve all, revise items, add custom inst
 
 ## NEXT
 
-1. Find next `todo` in SPRINT.md. 2. Complete any deferred VALIDATE steps now ready. 3. Context pressure check (see CONTEXT_CYCLE).
+1. Find next `todo` in SPRINT.md. 2. Complete any deferred VALIDATE steps now ready.
 
-→ Cycle needed → CONTEXT_CYCLE. Next exists → EXECUTE. All `done` + all Post-Merge `pass`/`n/a` → COMPLETE. All `done` but any `pending` → execute those validations — **do not present sprint review**.
+→ Next exists → EXECUTE. All `done` + all Post-Merge `pass`/`n/a` → COMPLETE. All `done` but any `pending` → execute those validations — **do not present sprint review**.
+
+Note: Context cycling is enforced by the `PreToolUse` hook — it fires on every tool call, not just at NEXT transitions. If cycling is needed, non-cycle tools will be blocked automatically.
 
 ## COMPLETE
 
@@ -152,13 +155,13 @@ Present all specs together. User may: approve all, revise items, add custom inst
 
 Any state → BLOCKED when: external dependency unavailable, missing credentials, ambiguous AC, debug checkpoint (3 failed attempts), test needs human action, pipeline escalation.
 
-Update SPRINT.md to `blocked`. Notify human: what, why, what unblocks. Wait. → Human resolves → return to prior state.
+Run `bash .claude/scripts/sprint-update.sh status S{n}-{seq} blocked`. Notify human: what, why, what unblocks. Wait. → Human resolves → return to prior state.
 
 ## CONTEXT_CYCLE
 
-Autonomous context management at NEXT transitions. Persists state, self-terminates, fresh session resumes (requires profile hook or sprint-runner).
+Autonomous context management. Persists state, self-terminates, fresh session resumes (requires profile hook or sprint-runner).
 
-**Primary signal:** Read `.context-usage` in the project root. If the file exists and `should_cycle` is `true`, cycle. Thresholds: 250k tokens Sonnet, 350k Opus, 35% unknown models.
+**Enforcement:** A `PreToolUse` hook (`context-cycle-hook.sh`) reads `.context-usage` on every tool call. When `should_cycle` is `true`, the hook **blocks all tool calls except Bash, Write, and Read** — which are the only tools needed to execute the cycle steps below. This is involuntary; the agent cannot skip or delay it. Thresholds: 250k tokens Sonnet, 350k Opus, 35% unknown models.
 
 **Fallback** (`.context-usage` absent — status line not configured): Cycle when ANY true: 3+ items completed this session | debug checkpoint triggered | rework executed. When in doubt, cycle.
 
