@@ -78,6 +78,26 @@ describe('POST /ask — error propagation', () => {
     expect(res.body.error).toBe('An internal error occurred while processing your request');
     expect(typeof res.body.durationMs).toBe('number');
   });
+
+  test('passes through "API fallback is disabled" error message', async () => {
+    mockAsk.mockRejectedValue(new Error('CLI unavailable and API fallback is disabled'));
+
+    const res = await authed(request(app).post('/ask'))
+      .send({ prompt: 'test' });
+
+    expect(res.status).toBe(502);
+    expect(res.body.error).toContain('API fallback is disabled');
+  });
+
+  test('passes through "ANTHROPIC_API_KEY is not set" error message', async () => {
+    mockAsk.mockRejectedValue(new Error('CLI unavailable and ANTHROPIC_API_KEY is not set'));
+
+    const res = await authed(request(app).post('/ask'))
+      .send({ prompt: 'test' });
+
+    expect(res.status).toBe(502);
+    expect(res.body.error).toContain('ANTHROPIC_API_KEY is not set');
+  });
 });
 
 describe('Unknown routes', () => {
