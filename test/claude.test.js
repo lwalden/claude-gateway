@@ -91,6 +91,51 @@ describe('ask() — CLI path', () => {
     expect(decoded).not.toContain('--append-system-prompt');
   });
 
+  test('includes --model flag with caller-specified model', async () => {
+    mockCliSuccess('response');
+
+    await ask({ prompt: 'test', model: 'claude-sonnet-4-6' });
+    const [, args] = mockExecFileAsync.mock.calls[0];
+    const encoded = args[args.indexOf('-EncodedCommand') + 1];
+    const decoded = Buffer.from(encoded, 'base64').toString('utf16le');
+    expect(decoded).toContain('--model');
+    expect(decoded).toContain('claude-sonnet-4-6');
+  });
+
+  test('includes --model flag with default model when none specified', async () => {
+    mockCliSuccess('response');
+
+    await ask({ prompt: 'test' });
+    const [, args] = mockExecFileAsync.mock.calls[0];
+    const encoded = args[args.indexOf('-EncodedCommand') + 1];
+    const decoded = Buffer.from(encoded, 'base64').toString('utf16le');
+    expect(decoded).toContain('--model');
+    expect(decoded).toContain('claude-sonnet-4-20250514'); // ANTHROPIC_MODEL env
+  });
+
+  test('escapes dollar signs in prompt to prevent PowerShell variable expansion', async () => {
+    mockCliSuccess('response');
+
+    await ask({ prompt: 'Fix the $element with aria-role' });
+    const [, args] = mockExecFileAsync.mock.calls[0];
+    const encoded = args[args.indexOf('-EncodedCommand') + 1];
+    const decoded = Buffer.from(encoded, 'base64').toString('utf16le');
+    // Dollar signs must be escaped as `$ in PowerShell double-quoted strings
+    expect(decoded).toContain('`$element');
+    expect(decoded).not.toMatch(/[^`]\$element/); // raw $element must not appear
+  });
+
+  test('escapes backticks in prompt to prevent PowerShell escape interpretation', async () => {
+    mockCliSuccess('response');
+
+    await ask({ prompt: 'Use `code` formatting' });
+    const [, args] = mockExecFileAsync.mock.calls[0];
+    const encoded = args[args.indexOf('-EncodedCommand') + 1];
+    const decoded = Buffer.from(encoded, 'base64').toString('utf16le');
+    // Backticks must be doubled in PowerShell double-quoted strings
+    expect(decoded).toContain('``code``');
+  });
+
   test('trims whitespace from CLI response', async () => {
     mockCliSuccess('  spaced response  \n');
 
