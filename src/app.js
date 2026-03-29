@@ -104,7 +104,8 @@ function sanitizeErrorMessage(message) {
   }
   // Pass through known safe messages
   const safeMessages = [
-    'Claude CLI unavailable and ANTHROPIC_API_KEY is not set',
+    'CLI unavailable and ANTHROPIC_API_KEY is not set',
+    'CLI unavailable and API fallback is disabled',
     'CLI returned empty response',
     'API returned empty response'
   ];

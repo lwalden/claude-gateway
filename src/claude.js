@@ -12,16 +12,29 @@ const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-opus-4-6';
 const API_FALLBACK_ENABLED = (process.env.API_FALLBACK_ENABLED ?? 'true') === 'true';
 
 /**
+ * Escape a string for use inside a PowerShell double-quoted string.
+ * Order matters: backticks first (escape char), then dollar signs, then quotes.
+ */
+function escapePowerShell(str) {
+  return str
+    .replace(/`/g, '``')     // backticks — PowerShell escape char
+    .replace(/\$/g, '`$')    // dollar signs — prevent variable expansion
+    .replace(/"/g, '`"');    // double quotes
+}
+
+/**
  * Ask Claude a question.
  * Tries the local Claude CLI first (subscription), falls back to Anthropic API.
  *
  * @param {object} opts
  * @param {string} opts.prompt        - The user prompt
  * @param {string} [opts.system]      - Optional system prompt
- * @param {string} [opts.model]       - Model override (API fallback only)
+ * @param {string} [opts.model]       - Model override (defaults to ANTHROPIC_MODEL)
  * @returns {Promise<{ response: string, source: 'cli'|'api', model: string }>}
  */
 async function ask({ prompt, system, model }) {
+  const resolvedModel = model || ANTHROPIC_MODEL;
+
   // --- Attempt 1: Claude CLI (skipped in container mode — no PowerShell/subscription) ---
   if (process.env.CONTAINER_MODE !== 'true') {
     try {
@@ -29,8 +42,8 @@ async function ask({ prompt, system, model }) {
       // cmd.exe doesn't quote arguments so multi-word prompts get split.
       // PowerShell -EncodedCommand accepts Base64-encoded UTF-16LE commands,
       // completely bypassing quoting issues regardless of prompt content.
-      let cliCmd = `claude -p "${prompt.replace(/"/g, '`"')}"`;
-      if (system) cliCmd += ` --append-system-prompt "${system.replace(/"/g, '`"')}"`;
+      let cliCmd = `claude -p "${escapePowerShell(prompt)}" --model "${escapePowerShell(resolvedModel)}"`;
+      if (system) cliCmd += ` --append-system-prompt "${escapePowerShell(system)}"`;
 
       const encoded = Buffer.from(cliCmd, 'utf16le').toString('base64');
 
@@ -65,8 +78,6 @@ async function ask({ prompt, system, model }) {
     err.code = 'FALLBACK_DISABLED';
     throw err;
   }
-
-  const resolvedModel = model || ANTHROPIC_MODEL;
 
   const body = {
     model: resolvedModel,
