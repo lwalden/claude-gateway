@@ -58,7 +58,3 @@ See `.claude/rules/git-workflow.md` — loaded natively by Claude Code each sess
 **Always loaded:** CLAUDE.md — keep under ~50 lines; don't add without removing something
 
 **On-demand:** DECISIONS.md — add `@DECISIONS.md` here to auto-load; delete superseded entries
-
-**Sprint tracking:** SPRINT.md — auto-loaded via @import; archived when sprint completes
-
-@SPRINT.md
