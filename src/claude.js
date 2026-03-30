@@ -43,7 +43,7 @@ async function ask({ prompt, system, model, jsonSchema }) {
       // cmd.exe doesn't quote arguments so multi-word prompts get split.
       // PowerShell -EncodedCommand accepts Base64-encoded UTF-16LE commands,
       // completely bypassing quoting issues regardless of prompt content.
-      let cliCmd = `claude -p "${escapePowerShell(prompt)}" --model "${escapePowerShell(resolvedModel)}"`;
+      let cliCmd = `claude -p "${escapePowerShell(prompt)}" --model "${escapePowerShell(resolvedModel)}" --bare --no-session-persistence`;
       if (system) cliCmd += ` --append-system-prompt "${escapePowerShell(system)}"`;
       if (jsonSchema) {
         const schemaStr = typeof jsonSchema === 'string' ? jsonSchema : JSON.stringify(jsonSchema);
