@@ -150,6 +150,51 @@ describe('ask() — CLI path', () => {
     const result = await ask({ prompt: 'test' });
     expect(result.source).toBe('api');
   });
+
+  test('includes --output-format json and --json-schema when jsonSchema provided', async () => {
+    mockCliSuccess(JSON.stringify({
+      type: 'result',
+      structured_output: { fixedHtml: '<img alt="test">', explanation: 'Added alt', wcagCriterion: '1.1.1', isApplicable: true }
+    }));
+
+    const schema = { type: 'object', properties: { fixedHtml: { type: 'string' } }, required: ['fixedHtml'] };
+    await ask({ prompt: 'test', jsonSchema: schema });
+
+    const [, args] = mockExecFileAsync.mock.calls[0];
+    const encoded = args[args.indexOf('-EncodedCommand') + 1];
+    const decoded = Buffer.from(encoded, 'base64').toString('utf16le');
+    expect(decoded).toContain('--output-format json');
+    expect(decoded).toContain('--json-schema');
+  });
+
+  test('extracts structured_output from CLI JSON envelope', async () => {
+    const structured = { fixedHtml: '<img alt="fix">', explanation: 'Fixed', wcagCriterion: '1.1.1', isApplicable: true };
+    mockCliSuccess(JSON.stringify({
+      type: 'result',
+      subtype: 'success',
+      structured_output: structured
+    }));
+
+    const result = await ask({
+      prompt: 'test',
+      jsonSchema: { type: 'object', properties: { fixedHtml: { type: 'string' } } }
+    });
+
+    expect(result.source).toBe('cli');
+    expect(JSON.parse(result.response)).toEqual(structured);
+  });
+
+  test('does not add --json-schema when jsonSchema is not provided', async () => {
+    mockCliSuccess('plain response');
+
+    await ask({ prompt: 'test' });
+
+    const [, args] = mockExecFileAsync.mock.calls[0];
+    const encoded = args[args.indexOf('-EncodedCommand') + 1];
+    const decoded = Buffer.from(encoded, 'base64').toString('utf16le');
+    expect(decoded).not.toContain('--json-schema');
+    expect(decoded).not.toContain('--output-format');
+  });
 });
 
 describe('ask() — CLI failure triggers API fallback', () => {
