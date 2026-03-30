@@ -48,7 +48,7 @@ function createApp({ gatewayApiKey } = {}) {
 
   // --- Main endpoint ---
   app.post('/ask', requireAuth, async (req, res) => {
-    const { prompt, system, model } = req.body || {};
+    const { prompt, system, model, jsonSchema } = req.body || {};
 
     if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
       return res.status(400).json({ error: 'prompt is required and must be a non-empty string' });
@@ -68,11 +68,14 @@ function createApp({ gatewayApiKey } = {}) {
     if (typeof model === 'string' && model.length > MAX_MODEL_LENGTH) {
       return res.status(400).json({ error: `model exceeds maximum length of ${MAX_MODEL_LENGTH} characters` });
     }
+    if (jsonSchema !== undefined && typeof jsonSchema !== 'object') {
+      return res.status(400).json({ error: 'jsonSchema must be an object if provided' });
+    }
 
     const startMs = Date.now();
 
     try {
-      const result = await ask({ prompt: prompt.trim(), system, model });
+      const result = await ask({ prompt: prompt.trim(), system, model, jsonSchema });
       const durationMs = Date.now() - startMs;
       console.log(`[ask] source=${result.source} duration=${durationMs}ms`);
       res._logMeta = { source: result.source, model: result.model };

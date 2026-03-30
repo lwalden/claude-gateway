@@ -30,9 +30,10 @@ function escapePowerShell(str) {
  * @param {string} opts.prompt        - The user prompt
  * @param {string} [opts.system]      - Optional system prompt
  * @param {string} [opts.model]       - Model override (defaults to ANTHROPIC_MODEL)
+ * @param {object} [opts.jsonSchema]  - JSON Schema to enforce structured output
  * @returns {Promise<{ response: string, source: 'cli'|'api', model: string }>}
  */
-async function ask({ prompt, system, model }) {
+async function ask({ prompt, system, model, jsonSchema }) {
   const resolvedModel = model || ANTHROPIC_MODEL;
 
   // --- Attempt 1: Claude CLI (skipped in container mode — no PowerShell/subscription) ---
@@ -44,6 +45,10 @@ async function ask({ prompt, system, model }) {
       // completely bypassing quoting issues regardless of prompt content.
       let cliCmd = `claude -p "${escapePowerShell(prompt)}" --model "${escapePowerShell(resolvedModel)}"`;
       if (system) cliCmd += ` --append-system-prompt "${escapePowerShell(system)}"`;
+      if (jsonSchema) {
+        const schemaStr = typeof jsonSchema === 'string' ? jsonSchema : JSON.stringify(jsonSchema);
+        cliCmd += ` --output-format json --json-schema "${escapePowerShell(schemaStr)}"`;
+      }
 
       const encoded = Buffer.from(cliCmd, 'utf16le').toString('base64');
 
@@ -59,6 +64,26 @@ async function ask({ prompt, system, model }) {
 
       const response = stdout.trim();
       if (!response) throw new Error('CLI returned empty response');
+
+      // When --output-format json is used, CLI returns an envelope with structured_output
+      if (jsonSchema) {
+        try {
+          const envelope = JSON.parse(response);
+          if (envelope.structured_output) {
+            return {
+              response: JSON.stringify(envelope.structured_output),
+              source: 'cli',
+              model: 'subscription'
+            };
+          }
+          // If structured_output is missing, fall through to raw result field
+          if (envelope.result) {
+            return { response: envelope.result, source: 'cli', model: 'subscription' };
+          }
+        } catch {
+          // JSON parse failed — return raw response
+        }
+      }
 
       return { response, source: 'cli', model: 'subscription' };
     } catch (cliErr) {
