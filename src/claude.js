@@ -47,7 +47,7 @@ async function ask({ prompt, system, model, jsonSchema }) {
       if (system) cliCmd += ` --append-system-prompt "${escapePowerShell(system)}"`;
       if (jsonSchema) {
         const schemaStr = typeof jsonSchema === 'string' ? jsonSchema : JSON.stringify(jsonSchema);
-        cliCmd += ` --output-format json --json-schema "${escapePowerShell(schemaStr)}"`;
+        cliCmd += ` --json-schema "${escapePowerShell(schemaStr)}"`;
       }
 
       const encoded = Buffer.from(cliCmd, 'utf16le').toString('base64');
@@ -64,26 +64,6 @@ async function ask({ prompt, system, model, jsonSchema }) {
 
       const response = stdout.trim();
       if (!response) throw new Error('CLI returned empty response');
-
-      // When --output-format json is used, CLI returns an envelope with structured_output
-      if (jsonSchema) {
-        try {
-          const envelope = JSON.parse(response);
-          if (envelope.structured_output) {
-            return {
-              response: JSON.stringify(envelope.structured_output),
-              source: 'cli',
-              model: 'subscription'
-            };
-          }
-          // If structured_output is missing, fall through to raw result field
-          if (envelope.result) {
-            return { response: envelope.result, source: 'cli', model: 'subscription' };
-          }
-        } catch {
-          // JSON parse failed — return raw response
-        }
-      }
 
       return { response, source: 'cli', model: 'subscription' };
     } catch (cliErr) {

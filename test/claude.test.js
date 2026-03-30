@@ -163,17 +163,13 @@ describe('ask() — CLI path', () => {
     const [, args] = mockExecFileAsync.mock.calls[0];
     const encoded = args[args.indexOf('-EncodedCommand') + 1];
     const decoded = Buffer.from(encoded, 'base64').toString('utf16le');
-    expect(decoded).toContain('--output-format json');
+    expect(decoded).not.toContain('--output-format json');
     expect(decoded).toContain('--json-schema');
   });
 
-  test('extracts structured_output from CLI JSON envelope', async () => {
-    const structured = { fixedHtml: '<img alt="fix">', explanation: 'Fixed', wcagCriterion: '1.1.1', isApplicable: true };
-    mockCliSuccess(JSON.stringify({
-      type: 'result',
-      subtype: 'success',
-      structured_output: structured
-    }));
+  test('returns raw JSON when --json-schema is used (no envelope extraction)', async () => {
+    const rawJson = JSON.stringify({ fixedHtml: '<img alt="fix">', explanation: 'Fixed', wcagCriterion: '1.1.1', isApplicable: true });
+    mockCliSuccess(rawJson);
 
     const result = await ask({
       prompt: 'test',
@@ -181,7 +177,7 @@ describe('ask() — CLI path', () => {
     });
 
     expect(result.source).toBe('cli');
-    expect(JSON.parse(result.response)).toEqual(structured);
+    expect(result.response).toBe(rawJson);
   });
 
   test('does not add --json-schema when jsonSchema is not provided', async () => {
