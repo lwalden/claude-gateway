@@ -9,7 +9,8 @@
     "test": "jest --verbose"
   },
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
     "jest": "^30.3.0",

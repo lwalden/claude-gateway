@@ -5,6 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const express = require('express');
+const swaggerUi = require('swagger-ui-express');
+const openApiSpec = require('./openapi.json');
 const { ask } = require('./claude');
 const { log, requestLogger } = require('./logger');
 
@@ -67,6 +69,9 @@ function createApp({ gatewayApiKey } = {}) {
       res.json({ status: 'unknown', reason: 'could not read credentials file' });
     }
   });
+
+  // --- API docs (no auth required) ---
+  app.use('/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec));
 
   // --- Main endpoint ---
   app.post('/ask', requireAuth, async (req, res) => {

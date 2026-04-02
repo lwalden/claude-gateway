@@ -41,44 +41,11 @@ npm start
 npm run dev
 ```
 
-### `POST /ask`
+### API docs
 
-```bash
-curl -X POST http://localhost:3131/ask \
-  -H "Authorization: Bearer YOUR_GATEWAY_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Explain closures in JavaScript"}'
-```
+Interactive API documentation (request/response schemas, try-it-out) is served at [`/docs`](https://gateway.lwalden.dev/docs).
 
-**Request body:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `prompt` | string | Yes | The prompt to send to Claude |
-| `system` | string | No | System prompt |
-| `model` | string | No | Model override |
-| `jsonSchema` | object | No | JSON Schema to enforce structured output |
-
-**Response:**
-
-```json
-{
-  "response": "A closure is a function that...",
-  "source": "cli",
-  "model": "claude-opus-4-6",
-  "durationMs": 2340
-}
-```
-
-`source` is `"cli"` when the subscription CLI handled the request, or `"api"` when it fell back to the Anthropic API.
-
-### `GET /health`
-
-Returns `{"status": "ok"}`. No auth required.
-
-### `GET /health/cli`
-
-Returns CLI auth token status (`ok`, `expiring`, `expired`). No auth required.
+Endpoints: `POST /ask`, `GET /health`, `GET /health/cli`.
 
 ## Testing
 

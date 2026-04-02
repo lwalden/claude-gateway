@@ -1,0 +1,203 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "claude-gateway",
+    "description": "HTTP gateway to Claude. CLI-first (subscription), Anthropic API fallback.",
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "https://gateway.lwalden.dev",
+      "description": "Production (Cloudflare Tunnel)"
+    },
+    {
+      "url": "http://localhost:3131",
+      "description": "Local development"
+    }
+  ],
+  "paths": {
+    "/ask": {
+      "post": {
+        "summary": "Ask Claude a question",
+        "description": "Sends a prompt to Claude via the local CLI. Falls back to the Anthropic API if the CLI is unavailable or times out.",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AskRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Claude response",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AskResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (missing or invalid prompt, system, model, or jsonSchema)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "502": {
+            "description": "Both CLI and API failed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponseWithDuration" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "description": "Returns service status. No authentication required.",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" },
+                    "service": { "type": "string", "example": "claude-gateway" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/cli": {
+      "get": {
+        "summary": "CLI auth status",
+        "description": "Returns the Claude CLI OAuth token status. No authentication required.",
+        "responses": {
+          "200": {
+            "description": "Token status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": ["ok", "expiring", "expired", "unknown"],
+                      "description": "ok = valid, expiring = <2h remaining, expired = token has expired, unknown = credentials unreadable"
+                    },
+                    "expiresAt": {
+                      "type": "integer",
+                      "description": "Unix timestamp (ms) when the token expires",
+                      "example": 1743555600000
+                    },
+                    "hoursRemaining": {
+                      "type": "number",
+                      "description": "Hours until token expiry",
+                      "example": 6.2
+                    },
+                    "reason": {
+                      "type": "string",
+                      "description": "Present when status is 'unknown'"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "GATEWAY_API_KEY value as a bearer token"
+      }
+    },
+    "schemas": {
+      "AskRequest": {
+        "type": "object",
+        "required": ["prompt"],
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "The prompt to send to Claude",
+            "maxLength": 100000
+          },
+          "system": {
+            "type": "string",
+            "description": "System prompt",
+            "maxLength": 100000
+          },
+          "model": {
+            "type": "string",
+            "description": "Model override (defaults to ANTHROPIC_MODEL env var)",
+            "maxLength": 256,
+            "example": "claude-sonnet-4-6"
+          },
+          "jsonSchema": {
+            "type": "object",
+            "description": "JSON Schema to enforce structured output"
+          }
+        }
+      },
+      "AskResponse": {
+        "type": "object",
+        "properties": {
+          "response": {
+            "type": "string",
+            "description": "Claude's response text (or JSON string if jsonSchema was provided)"
+          },
+          "source": {
+            "type": "string",
+            "enum": ["cli", "api"],
+            "description": "Which path handled the request"
+          },
+          "model": {
+            "type": "string",
+            "description": "Model that was used",
+            "example": "claude-opus-4-6"
+          },
+          "durationMs": {
+            "type": "integer",
+            "description": "Request duration in milliseconds"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" }
+        }
+      },
+      "ErrorResponseWithDuration": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" },
+          "durationMs": { "type": "integer" }
+        }
+      }
+    }
+  }
+}
