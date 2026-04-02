@@ -58,7 +58,8 @@ async function ask({ prompt, system, model, jsonSchema }) {
         {
           timeout: CLI_TIMEOUT_MS,
           maxBuffer: 10 * 1024 * 1024,
-          cwd: os.homedir() // neutral cwd — prevents CLAUDE.md project context from interfering
+          cwd: os.homedir(), // neutral cwd — prevents CLAUDE.md project context from interfering
+          input: ''          // close stdin immediately — prevents claude CLI from hanging waiting for piped input
         }
       );
 
