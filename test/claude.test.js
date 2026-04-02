@@ -289,3 +289,120 @@ describe('ask() — API path failures', () => {
     await expect(ask({ prompt: 'test' })).rejects.toThrow(/empty response/);
   });
 });
+
+describe('ask() — API fallback with jsonSchema (tool_use)', () => {
+  beforeEach(() => {
+    // Force API path by making CLI fail
+    mockCliFailure();
+  });
+
+  test('passes jsonSchema as tool_use when provided in API fallback', async () => {
+    const schema = {
+      type: 'object',
+      properties: { fixedHtml: { type: 'string' }, explanation: { type: 'string' } },
+      required: ['fixedHtml']
+    };
+
+    fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [{
+          type: 'tool_use',
+          id: 'toolu_01',
+          name: 'structured_output',
+          input: { fixedHtml: '<img alt="test">', explanation: 'Added alt' }
+        }]
+      })
+    });
+
+    await ask({ prompt: 'test', jsonSchema: schema });
+
+    const fetchBody = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(fetchBody.tools).toEqual([{
+      name: 'structured_output',
+      description: 'Return the response in this exact JSON structure',
+      input_schema: schema
+    }]);
+    expect(fetchBody.tool_choice).toEqual({ type: 'tool', name: 'structured_output' });
+  });
+
+  test('extracts tool_use input from API response when jsonSchema was provided', async () => {
+    const schema = { type: 'object', properties: { fixedHtml: { type: 'string' } } };
+    const toolInput = { fixedHtml: '<img alt="fixed">', explanation: 'Fixed it' };
+
+    fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [{
+          type: 'tool_use',
+          id: 'toolu_01',
+          name: 'structured_output',
+          input: toolInput
+        }]
+      })
+    });
+
+    const result = await ask({ prompt: 'test', jsonSchema: schema });
+    expect(result.response).toBe(JSON.stringify(toolInput));
+    expect(result.source).toBe('api');
+  });
+
+  test('handles array jsonSchema for batch responses', async () => {
+    const arraySchema = {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { fixedHtml: { type: 'string' }, explanation: { type: 'string' } },
+        required: ['fixedHtml']
+      }
+    };
+
+    const batchResult = [
+      { fixedHtml: '<img alt="a">', explanation: 'First' },
+      { fixedHtml: '<img alt="b">', explanation: 'Second' }
+    ];
+
+    fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [{
+          type: 'tool_use',
+          id: 'toolu_01',
+          name: 'structured_output',
+          input: batchResult
+        }]
+      })
+    });
+
+    await ask({ prompt: 'test', jsonSchema: arraySchema });
+
+    const fetchBody = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(fetchBody.tools[0].input_schema).toEqual(arraySchema);
+    expect(fetchBody.tools[0].input_schema.type).toBe('array');
+  });
+
+  test('does not include tools when jsonSchema is not provided', async () => {
+    mockApiSuccess('plain text response');
+
+    await ask({ prompt: 'test' });
+
+    const fetchBody = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(fetchBody.tools).toBeUndefined();
+    expect(fetchBody.tool_choice).toBeUndefined();
+  });
+
+  test('falls back to text extraction when tool_use block is missing despite jsonSchema', async () => {
+    const schema = { type: 'object', properties: { fixedHtml: { type: 'string' } } };
+
+    fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [{ type: 'text', text: '{"fixedHtml": "<img alt=\\"fallback\\">"}' }]
+      })
+    });
+
+    const result = await ask({ prompt: 'test', jsonSchema: schema });
+    expect(result.response).toBe('{"fixedHtml": "<img alt=\\"fallback\\">"}');
+    expect(result.source).toBe('api');
+  });
+});

@@ -91,6 +91,14 @@ async function ask({ prompt, system, model, jsonSchema }) {
     messages: [{ role: 'user', content: prompt }]
   };
   if (system) body.system = system;
+  if (jsonSchema) {
+    body.tools = [{
+      name: 'structured_output',
+      description: 'Return the response in this exact JSON structure',
+      input_schema: jsonSchema
+    }];
+    body.tool_choice = { type: 'tool', name: 'structured_output' };
+  }
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -109,7 +117,14 @@ async function ask({ prompt, system, model, jsonSchema }) {
   }
 
   const data = await res.json();
-  const response = data.content?.[0]?.text?.trim();
+  let response;
+  if (jsonSchema && data.content) {
+    // tool_use response: find the tool_use block and extract its input
+    const toolBlock = data.content.find(b => b.type === 'tool_use');
+    response = toolBlock ? JSON.stringify(toolBlock.input) : data.content[0]?.text?.trim();
+  } else {
+    response = data.content?.[0]?.text?.trim();
+  }
   if (!response) throw new Error('API returned empty response');
 
   return { response, source: 'api', model: resolvedModel };
