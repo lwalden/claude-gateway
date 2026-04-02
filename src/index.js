@@ -12,6 +12,7 @@ try {
 } catch { /* no .env — rely on process environment */ }
 
 const { createApp } = require('./app');
+const { startAutoRefresh } = require('./auth-refresh');
 
 const PORT = parseInt(process.env.PORT || '3131', 10);
 const app = createApp();
@@ -22,4 +23,5 @@ app.listen(PORT, () => {
   console.log(`  Auth:     ${process.env.GATEWAY_API_KEY ? 'enabled' : 'MISSING — set GATEWAY_API_KEY'}`);
   console.log(`  CLI:      claude --print`);
   console.log(`  Fallback: Anthropic API (${process.env.ANTHROPIC_MODEL || 'claude-opus-4-6'})`);
+  startAutoRefresh();
 });
