@@ -2,6 +2,8 @@
 
 const { execFile } = require('child_process');
 const { promisify } = require('util');
+const fs = require('fs');
+const path = require('path');
 const os = require('os');
 
 const execFileAsync = promisify(execFile);
@@ -38,12 +40,14 @@ async function ask({ prompt, system, model, jsonSchema }) {
 
   // --- Attempt 1: Claude CLI (skipped in container mode — no PowerShell/subscription) ---
   if (process.env.CONTAINER_MODE !== 'true') {
+    // Write prompt to a temp file and pipe it to claude via Get-Content.
+    // This avoids PowerShell's 32KB command-line limit for -EncodedCommand,
+    // which large batch prompts (e.g. AccessiShield remediation) exceed.
+    const tmpFile = path.join(os.tmpdir(), `claude-prompt-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
     try {
-      // On Windows, claude resolves to claude.cmd which requires a shell to execute.
-      // cmd.exe doesn't quote arguments so multi-word prompts get split.
-      // PowerShell -EncodedCommand accepts Base64-encoded UTF-16LE commands,
-      // completely bypassing quoting issues regardless of prompt content.
-      let cliCmd = `claude -p "${escapePowerShell(prompt)}" --model "${escapePowerShell(resolvedModel)}" --bare --no-session-persistence`;
+      fs.writeFileSync(tmpFile, prompt, 'utf8');
+
+      let cliCmd = `Get-Content "${tmpFile}" -Raw | claude -p --model "${escapePowerShell(resolvedModel)}" --bare --no-session-persistence`;
       if (system) cliCmd += ` --append-system-prompt "${escapePowerShell(system)}"`;
       if (jsonSchema) {
         const schemaStr = typeof jsonSchema === 'string' ? jsonSchema : JSON.stringify(jsonSchema);
@@ -58,8 +62,8 @@ async function ask({ prompt, system, model, jsonSchema }) {
         {
           timeout: CLI_TIMEOUT_MS,
           maxBuffer: 10 * 1024 * 1024,
-          cwd: os.homedir(), // neutral cwd — prevents CLAUDE.md project context from interfering
-          input: ''          // close stdin immediately — prevents claude CLI from hanging waiting for piped input
+          cwd: os.homedir(),
+          input: ''
         }
       );
 
@@ -70,6 +74,8 @@ async function ask({ prompt, system, model, jsonSchema }) {
     } catch (cliErr) {
       const reason = cliErr.killed ? 'timeout' : cliErr.code === 'ENOENT' ? 'not found' : cliErr.message;
       console.warn(`[claude] CLI failed (${reason}), falling back to API`);
+    } finally {
+      try { fs.unlinkSync(tmpFile); } catch {}
     }
   }
 

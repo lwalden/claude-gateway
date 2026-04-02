@@ -9,6 +9,17 @@ jest.mock('child_process', () => ({
   execFile: mockExecFile
 }));
 
+// fs mock — only writeFileSync/unlinkSync (temp file for prompt piping)
+jest.mock('fs', () => {
+  const actual = jest.requireActual('fs');
+  return {
+    ...actual,
+    writeFileSync: jest.fn(),
+    unlinkSync: jest.fn()
+  };
+});
+const fs = require('fs');
+
 // Set env defaults for tests
 process.env.ANTHROPIC_API_KEY = 'test-api-key';
 process.env.ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
@@ -113,27 +124,80 @@ describe('ask() — CLI path', () => {
     expect(decoded).toContain('claude-sonnet-4-20250514'); // ANTHROPIC_MODEL env
   });
 
-  test('escapes dollar signs in prompt to prevent PowerShell variable expansion', async () => {
+  test('writes prompt to temp file and pipes via Get-Content', async () => {
     mockCliSuccess('response');
 
-    await ask({ prompt: 'Fix the $element with aria-role' });
+    await ask({ prompt: 'test prompt content' });
+
+    // Prompt written to temp file as-is (no PowerShell escaping needed)
+    expect(fs.writeFileSync).toHaveBeenCalledTimes(1);
+    const [tmpPath, content, encoding] = fs.writeFileSync.mock.calls[0];
+    expect(content).toBe('test prompt content');
+    expect(encoding).toBe('utf8');
+    expect(tmpPath).toMatch(/claude-prompt-.*\.txt$/);
+
+    // Command uses Get-Content pipe, prompt is NOT in the command
     const [, args] = mockExecFileAsync.mock.calls[0];
     const encoded = args[args.indexOf('-EncodedCommand') + 1];
     const decoded = Buffer.from(encoded, 'base64').toString('utf16le');
-    // Dollar signs must be escaped as `$ in PowerShell double-quoted strings
-    expect(decoded).toContain('`$element');
-    expect(decoded).not.toMatch(/[^`]\$element/); // raw $element must not appear
+    expect(decoded).toContain('Get-Content');
+    expect(decoded).toContain('| claude -p');
+    expect(decoded).not.toContain('test prompt content');
   });
 
-  test('escapes backticks in prompt to prevent PowerShell escape interpretation', async () => {
+  test('writes prompt with special characters to temp file unescaped', async () => {
+    mockCliSuccess('response');
+    const specialPrompt = 'Fix $element with `backticks` and "quotes"';
+
+    await ask({ prompt: specialPrompt });
+
+    // Prompt is written raw — no PowerShell escaping since it goes through a file
+    const [, content] = fs.writeFileSync.mock.calls[0];
+    expect(content).toBe(specialPrompt);
+  });
+
+  test('escapes dollar signs in system prompt for PowerShell', async () => {
     mockCliSuccess('response');
 
-    await ask({ prompt: 'Use `code` formatting' });
+    await ask({ prompt: 'test', system: 'Use $variable correctly' });
     const [, args] = mockExecFileAsync.mock.calls[0];
     const encoded = args[args.indexOf('-EncodedCommand') + 1];
     const decoded = Buffer.from(encoded, 'base64').toString('utf16le');
-    // Backticks must be doubled in PowerShell double-quoted strings
-    expect(decoded).toContain('``code``');
+    expect(decoded).toContain('`$variable');
+  });
+
+  test('cleans up temp file after successful CLI call', async () => {
+    mockCliSuccess('response');
+
+    await ask({ prompt: 'test' });
+
+    expect(fs.unlinkSync).toHaveBeenCalledTimes(1);
+    const tmpPath = fs.writeFileSync.mock.calls[0][0];
+    expect(fs.unlinkSync).toHaveBeenCalledWith(tmpPath);
+  });
+
+  test('cleans up temp file after failed CLI call', async () => {
+    mockCliFailure();
+    mockApiSuccess();
+
+    await ask({ prompt: 'test' });
+
+    expect(fs.unlinkSync).toHaveBeenCalledTimes(1);
+  });
+
+  test('handles large batch prompts via temp file without command-line limit', async () => {
+    const largePrompt = 'A'.repeat(50000); // 50KB — well over 32KB EncodedCommand limit
+    mockCliSuccess('{"items": []}');
+
+    await ask({ prompt: largePrompt });
+
+    // Large prompt goes to file, not command
+    expect(fs.writeFileSync.mock.calls[0][1]).toBe(largePrompt);
+    const [, args] = mockExecFileAsync.mock.calls[0];
+    const encoded = args[args.indexOf('-EncodedCommand') + 1];
+    const decoded = Buffer.from(encoded, 'base64').toString('utf16le');
+    expect(decoded).not.toContain(largePrompt);
+    expect(decoded.length).toBeLessThan(1000); // command itself stays small
   });
 
   test('trims whitespace from CLI response', async () => {
