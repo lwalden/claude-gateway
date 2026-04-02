@@ -1,6 +1,9 @@
 // app.js — Express app factory (importable for testing)
 
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const express = require('express');
 const { ask } = require('./claude');
 const { log, requestLogger } = require('./logger');
@@ -44,6 +47,25 @@ function createApp({ gatewayApiKey } = {}) {
   // --- Health check (no auth required) ---
   app.get('/health', (req, res) => {
     res.json({ status: 'ok', service: 'claude-gateway' });
+  });
+
+  // --- CLI auth health check (no auth required) ---
+  app.get('/health/cli', (req, res) => {
+    try {
+      const credsPath = path.join(os.homedir(), '.claude', '.credentials.json');
+      const raw = fs.readFileSync(credsPath, 'utf8');
+      const creds = JSON.parse(raw);
+      const expiresAt = creds?.claudeAiOauth?.expiresAt;
+      if (!expiresAt) {
+        return res.json({ status: 'unknown', reason: 'expiresAt not found in credentials' });
+      }
+      const nowMs = Date.now();
+      const hoursRemaining = Math.round((expiresAt - nowMs) / 1000 / 60 / 60 * 10) / 10;
+      const status = hoursRemaining <= 0 ? 'expired' : hoursRemaining < 2 ? 'expiring' : 'ok';
+      res.json({ status, expiresAt, hoursRemaining });
+    } catch (err) {
+      res.json({ status: 'unknown', reason: 'could not read credentials file' });
+    }
   });
 
   // --- Main endpoint ---
