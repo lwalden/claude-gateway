@@ -10,7 +10,7 @@ const os = require('os');
 
 const CREDENTIALS_PATH = path.join(os.homedir(), '.claude', '.credentials.json');
 const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token';
-const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
+const CLIENT_ID = process.env.CLAUDE_OAUTH_CLIENT_ID || '';
 
 // Refresh if token expires within this many ms (7.5 hours — half a period early)
 const REFRESH_THRESHOLD_MS = 7.5 * 60 * 60 * 1000;
@@ -32,6 +32,11 @@ async function refreshTokens() {
     creds = readCredentials();
   } catch {
     console.warn('[auth-refresh] Could not read credentials file — skipping refresh');
+    return;
+  }
+
+  if (!CLIENT_ID) {
+    console.warn('[auth-refresh] CLAUDE_OAUTH_CLIENT_ID not set — skipping refresh');
     return;
   }
 
