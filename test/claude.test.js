@@ -9,6 +9,17 @@ jest.mock('child_process', () => ({
   execFile: mockExecFile
 }));
 
+// fs mock — only writeFileSync/unlinkSync (temp file for prompt piping)
+jest.mock('fs', () => {
+  const actual = jest.requireActual('fs');
+  return {
+    ...actual,
+    writeFileSync: jest.fn(),
+    unlinkSync: jest.fn()
+  };
+});
+const fs = require('fs');
+
 // Set env defaults for tests
 process.env.ANTHROPIC_API_KEY = 'test-api-key';
 process.env.ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
@@ -113,27 +124,80 @@ describe('ask() — CLI path', () => {
     expect(decoded).toContain('claude-sonnet-4-20250514'); // ANTHROPIC_MODEL env
   });
 
-  test('escapes dollar signs in prompt to prevent PowerShell variable expansion', async () => {
+  test('writes prompt to temp file and pipes via Get-Content', async () => {
     mockCliSuccess('response');
 
-    await ask({ prompt: 'Fix the $element with aria-role' });
+    await ask({ prompt: 'test prompt content' });
+
+    // Prompt written to temp file as-is (no PowerShell escaping needed)
+    expect(fs.writeFileSync).toHaveBeenCalledTimes(1);
+    const [tmpPath, content, encoding] = fs.writeFileSync.mock.calls[0];
+    expect(content).toBe('test prompt content');
+    expect(encoding).toBe('utf8');
+    expect(tmpPath).toMatch(/claude-prompt-.*\.txt$/);
+
+    // Command uses Get-Content pipe, prompt is NOT in the command
     const [, args] = mockExecFileAsync.mock.calls[0];
     const encoded = args[args.indexOf('-EncodedCommand') + 1];
     const decoded = Buffer.from(encoded, 'base64').toString('utf16le');
-    // Dollar signs must be escaped as `$ in PowerShell double-quoted strings
-    expect(decoded).toContain('`$element');
-    expect(decoded).not.toMatch(/[^`]\$element/); // raw $element must not appear
+    expect(decoded).toContain('Get-Content');
+    expect(decoded).toContain('| claude -p');
+    expect(decoded).not.toContain('test prompt content');
   });
 
-  test('escapes backticks in prompt to prevent PowerShell escape interpretation', async () => {
+  test('writes prompt with special characters to temp file unescaped', async () => {
+    mockCliSuccess('response');
+    const specialPrompt = 'Fix $element with `backticks` and "quotes"';
+
+    await ask({ prompt: specialPrompt });
+
+    // Prompt is written raw — no PowerShell escaping since it goes through a file
+    const [, content] = fs.writeFileSync.mock.calls[0];
+    expect(content).toBe(specialPrompt);
+  });
+
+  test('escapes dollar signs in system prompt for PowerShell', async () => {
     mockCliSuccess('response');
 
-    await ask({ prompt: 'Use `code` formatting' });
+    await ask({ prompt: 'test', system: 'Use $variable correctly' });
     const [, args] = mockExecFileAsync.mock.calls[0];
     const encoded = args[args.indexOf('-EncodedCommand') + 1];
     const decoded = Buffer.from(encoded, 'base64').toString('utf16le');
-    // Backticks must be doubled in PowerShell double-quoted strings
-    expect(decoded).toContain('``code``');
+    expect(decoded).toContain('`$variable');
+  });
+
+  test('cleans up temp file after successful CLI call', async () => {
+    mockCliSuccess('response');
+
+    await ask({ prompt: 'test' });
+
+    expect(fs.unlinkSync).toHaveBeenCalledTimes(1);
+    const tmpPath = fs.writeFileSync.mock.calls[0][0];
+    expect(fs.unlinkSync).toHaveBeenCalledWith(tmpPath);
+  });
+
+  test('cleans up temp file after failed CLI call', async () => {
+    mockCliFailure();
+    mockApiSuccess();
+
+    await ask({ prompt: 'test' });
+
+    expect(fs.unlinkSync).toHaveBeenCalledTimes(1);
+  });
+
+  test('handles large batch prompts via temp file without command-line limit', async () => {
+    const largePrompt = 'A'.repeat(50000); // 50KB — well over 32KB EncodedCommand limit
+    mockCliSuccess('{"items": []}');
+
+    await ask({ prompt: largePrompt });
+
+    // Large prompt goes to file, not command
+    expect(fs.writeFileSync.mock.calls[0][1]).toBe(largePrompt);
+    const [, args] = mockExecFileAsync.mock.calls[0];
+    const encoded = args[args.indexOf('-EncodedCommand') + 1];
+    const decoded = Buffer.from(encoded, 'base64').toString('utf16le');
+    expect(decoded).not.toContain(largePrompt);
+    expect(decoded.length).toBeLessThan(1000); // command itself stays small
   });
 
   test('trims whitespace from CLI response', async () => {
@@ -287,5 +351,122 @@ describe('ask() — API path failures', () => {
     });
 
     await expect(ask({ prompt: 'test' })).rejects.toThrow(/empty response/);
+  });
+});
+
+describe('ask() — API fallback with jsonSchema (tool_use)', () => {
+  beforeEach(() => {
+    // Force API path by making CLI fail
+    mockCliFailure();
+  });
+
+  test('passes jsonSchema as tool_use when provided in API fallback', async () => {
+    const schema = {
+      type: 'object',
+      properties: { fixedHtml: { type: 'string' }, explanation: { type: 'string' } },
+      required: ['fixedHtml']
+    };
+
+    fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [{
+          type: 'tool_use',
+          id: 'toolu_01',
+          name: 'structured_output',
+          input: { fixedHtml: '<img alt="test">', explanation: 'Added alt' }
+        }]
+      })
+    });
+
+    await ask({ prompt: 'test', jsonSchema: schema });
+
+    const fetchBody = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(fetchBody.tools).toEqual([{
+      name: 'structured_output',
+      description: 'Return the response in this exact JSON structure',
+      input_schema: schema
+    }]);
+    expect(fetchBody.tool_choice).toEqual({ type: 'tool', name: 'structured_output' });
+  });
+
+  test('extracts tool_use input from API response when jsonSchema was provided', async () => {
+    const schema = { type: 'object', properties: { fixedHtml: { type: 'string' } } };
+    const toolInput = { fixedHtml: '<img alt="fixed">', explanation: 'Fixed it' };
+
+    fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [{
+          type: 'tool_use',
+          id: 'toolu_01',
+          name: 'structured_output',
+          input: toolInput
+        }]
+      })
+    });
+
+    const result = await ask({ prompt: 'test', jsonSchema: schema });
+    expect(result.response).toBe(JSON.stringify(toolInput));
+    expect(result.source).toBe('api');
+  });
+
+  test('handles array jsonSchema for batch responses', async () => {
+    const arraySchema = {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { fixedHtml: { type: 'string' }, explanation: { type: 'string' } },
+        required: ['fixedHtml']
+      }
+    };
+
+    const batchResult = [
+      { fixedHtml: '<img alt="a">', explanation: 'First' },
+      { fixedHtml: '<img alt="b">', explanation: 'Second' }
+    ];
+
+    fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [{
+          type: 'tool_use',
+          id: 'toolu_01',
+          name: 'structured_output',
+          input: batchResult
+        }]
+      })
+    });
+
+    await ask({ prompt: 'test', jsonSchema: arraySchema });
+
+    const fetchBody = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(fetchBody.tools[0].input_schema).toEqual(arraySchema);
+    expect(fetchBody.tools[0].input_schema.type).toBe('array');
+  });
+
+  test('does not include tools when jsonSchema is not provided', async () => {
+    mockApiSuccess('plain text response');
+
+    await ask({ prompt: 'test' });
+
+    const fetchBody = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(fetchBody.tools).toBeUndefined();
+    expect(fetchBody.tool_choice).toBeUndefined();
+  });
+
+  test('falls back to text extraction when tool_use block is missing despite jsonSchema', async () => {
+    const schema = { type: 'object', properties: { fixedHtml: { type: 'string' } } };
+
+    fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        content: [{ type: 'text', text: '{"fixedHtml": "<img alt=\\"fallback\\">"}' }]
+      })
+    });
+
+    const result = await ask({ prompt: 'test', jsonSchema: schema });
+    expect(result.response).toBe('{"fixedHtml": "<img alt=\\"fallback\\">"}');
+    expect(result.source).toBe('api');
   });
 });
