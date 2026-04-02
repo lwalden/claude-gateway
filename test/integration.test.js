@@ -29,7 +29,7 @@ describe('GET /health', () => {
 
 describe('POST /ask — full flow', () => {
   test('returns Claude response with source and durationMs', async () => {
-    mockAsk.mockResolvedValue({ response: 'Hello!', source: 'cli', model: 'subscription' });
+    mockAsk.mockResolvedValue({ response: 'Hello!', source: 'cli', model: 'claude-sonnet-4-20250514' });
 
     const res = await authed(request(app).post('/ask'))
       .send({ prompt: 'Hi there' });
@@ -37,7 +37,7 @@ describe('POST /ask — full flow', () => {
     expect(res.status).toBe(200);
     expect(res.body.response).toBe('Hello!');
     expect(res.body.source).toBe('cli');
-    expect(res.body.model).toBe('subscription');
+    expect(res.body.model).toBe('claude-sonnet-4-20250514');
     expect(typeof res.body.durationMs).toBe('number');
   });
 
@@ -55,7 +55,7 @@ describe('POST /ask — full flow', () => {
   });
 
   test('trims whitespace from prompt before passing to ask()', async () => {
-    mockAsk.mockResolvedValue({ response: 'ok', source: 'cli', model: 'subscription' });
+    mockAsk.mockResolvedValue({ response: 'ok', source: 'cli', model: 'claude-sonnet-4-20250514' });
 
     await authed(request(app).post('/ask'))
       .send({ prompt: '  hello  ' });

@@ -66,7 +66,7 @@ describe('ask() — CLI path', () => {
     expect(result).toEqual({
       response: 'Hello from CLI',
       source: 'cli',
-      model: 'subscription'
+      model: 'claude-sonnet-4-20250514'
     });
     expect(mockExecFileAsync).toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();

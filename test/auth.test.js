@@ -3,7 +3,7 @@ const { createApp } = require('../src/app');
 
 // Mock claude.js so /ask doesn't invoke real CLI/API
 jest.mock('../src/claude', () => ({
-  ask: jest.fn().mockResolvedValue({ response: 'mocked', source: 'cli', model: 'subscription' })
+  ask: jest.fn().mockResolvedValue({ response: 'mocked', source: 'cli', model: 'claude-sonnet-4-20250514' })
 }));
 
 describe('Auth middleware', () => {

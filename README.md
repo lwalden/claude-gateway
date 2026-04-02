@@ -65,7 +65,7 @@ curl -X POST http://localhost:3131/ask \
 {
   "response": "A closure is a function that...",
   "source": "cli",
-  "model": "subscription",
+  "model": "claude-opus-4-6",
   "durationMs": 2340
 }
 ```

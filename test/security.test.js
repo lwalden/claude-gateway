@@ -28,7 +28,7 @@ describe('Prompt length validation', () => {
   });
 
   test('accepts prompts at the 100K limit', async () => {
-    mockAsk.mockResolvedValue({ response: 'ok', source: 'cli', model: 'subscription' });
+    mockAsk.mockResolvedValue({ response: 'ok', source: 'cli', model: 'claude-sonnet-4-20250514' });
     const res = await authed(request(app).post('/ask'))
       .send({ prompt: 'a'.repeat(100_000) });
     expect(res.status).toBe(200);
@@ -65,7 +65,7 @@ describe('System and model type validation', () => {
   });
 
   test('accepts undefined system and model (optional)', async () => {
-    mockAsk.mockResolvedValue({ response: 'ok', source: 'cli', model: 'subscription' });
+    mockAsk.mockResolvedValue({ response: 'ok', source: 'cli', model: 'claude-sonnet-4-20250514' });
     const res = await authed(request(app).post('/ask'))
       .send({ prompt: 'hello' });
     expect(res.status).toBe(200);

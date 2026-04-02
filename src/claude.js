@@ -70,7 +70,7 @@ async function ask({ prompt, system, model, jsonSchema }) {
       const response = stdout.trim();
       if (!response) throw new Error('CLI returned empty response');
 
-      return { response, source: 'cli', model: 'subscription' };
+      return { response, source: 'cli', model: resolvedModel };
     } catch (cliErr) {
       const reason = cliErr.killed ? 'timeout' : cliErr.code === 'ENOENT' ? 'not found' : cliErr.message;
       console.warn(`[claude] CLI failed (${reason}), falling back to API`);
