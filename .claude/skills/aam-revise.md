@@ -1,3 +1,9 @@
+---
+description: Mid-stream plan revision — add, change, drop, or reprioritize
+user-invocable: true
+effort: medium
+---
+
 # /aam-revise - Revise the Plan
 
 You are helping the user revise their project plan (`docs/strategy-roadmap.md`) based on new information, research findings, or changed requirements. This is the "product owner feedback point" — the user brings updates, and you synthesize them directly into the planning documents.
@@ -67,6 +73,15 @@ The user wants to move features between phases or reorder priorities within a ph
 **How to handle:**
 1. Move the feature(s) to the requested phase in `docs/strategy-roadmap.md`.
 2. If a phase now has too many or too few features, flag it: "Phase [N] now has [count] features — [observation about scope]."
+
+### F) Defer to Backlog
+
+The user wants to capture an idea for later without placing it in a specific phase.
+
+**How to handle:**
+1. Run `bash .claude/scripts/backlog-capture.sh add <type> "<title>" "revise"` to capture the item.
+2. If the item was previously in a roadmap phase, remove it from that phase.
+3. Log the deferral in the Roadmap History table.
 3. Log significant moves in `DECISIONS.md` (moving something from Phase 1 to Phase 3 is significant; reordering within a phase is not).
 
 ---
