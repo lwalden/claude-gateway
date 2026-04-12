@@ -52,16 +52,15 @@
 
 ## Phases
 
-**Phase 1 (MVP):** Validate and harden -- test existing code, review configurables, security audit
-**Phase 2:** Capabilities -- streaming responses, system prompt defaults, request logging, health check enhancements
-**Phase 3:** Robustness -- cross-platform CLI support (Unix), retry logic, graceful degradation, optional rate limiting
+**Phase 1 (MVP):** Validate and harden -- test existing code, review configurables, security audit.
+
+**Phase 2 & 3 (unscheduled):** Future capability and robustness work — streaming responses, system prompt defaults, request logging, retry logic, optional rate limiting, cross-platform CLI, etc. Individual items are captured in `BACKLOG.md` and will be pulled into a sprint when prioritized.
 
 ---
 
 ## Open Questions
 
-<!-- TODO: Should max_tokens be caller-configurable per request or fixed? | WHEN: Phase 1 configurable review | BLOCKS: nothing critical -->
-<!-- TODO: Is cross-platform (Unix) CLI support needed, or is this permanently Windows-only? | WHEN: Phase 3 planning | BLOCKS: Phase 3 scope -->
+<!-- (None — open decisions moved to DECISIONS.md as "Revisit" entries.) -->
 
 ---
 
