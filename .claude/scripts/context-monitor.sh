@@ -24,15 +24,26 @@ if [ "$window_size" = "0" ] || [ "$window_size" = "null" ]; then
   exit 0
 fi
 
-# Model-specific absolute token thresholds
+# Model-specific absolute token thresholds (sized for 1M context windows).
+# These are capped below if the actual window is smaller (e.g. 200k).
 case "$model_id" in
-  *opus*)   threshold=350000 ;;
-  *sonnet*) threshold=250000 ;;
+  *opus*)   threshold=580000 ;;
+  *sonnet*) threshold=500000 ;;
   *)        threshold=0 ;;  # unknown model — fall back to percentage
 esac
 
 # Calculate tokens currently in context window
 used_tokens=$(echo "$used_pct $window_size" | awk '{printf "%d", ($1 / 100) * $2}')
+
+# Cap threshold to 70% of actual window_size so cycling works on both
+# 200k (standard) and 1M context windows. Without this cap the hardcoded
+# thresholds above are unreachable on 200k contexts.
+if [ "$threshold" -gt 0 ] && [ "$window_size" -gt 0 ]; then
+  max_threshold=$(echo "$window_size" | awk '{printf "%d", $1 * 0.70}')
+  if [ "$threshold" -gt "$max_threshold" ]; then
+    threshold=$max_threshold
+  fi
+fi
 
 # Determine if cycling is warranted
 should_cycle=false
@@ -48,12 +59,18 @@ else
   fi
 fi
 
+# Secondary signal: exceeds 200k tokens (useful for status line consumers)
+exceeds_200k=false
+if [ "$used_tokens" -ge 200000 ]; then
+  exceeds_200k=true
+fi
+
 # Write to project root (atomic via temp file)
 tmpfile="$cwd/.context-usage.tmp"
 outfile="$cwd/.context-usage"
 
 cat > "$tmpfile" << EOF
-{"should_cycle":$should_cycle,"model":"$model_id","used_tokens":$used_tokens,"threshold":$threshold,"used_pct":$used_pct,"window_size":$window_size,"total_input":$total_input,"total_output":$total_output}
+{"should_cycle":$should_cycle,"model":"$model_id","used_tokens":$used_tokens,"threshold":$threshold,"used_pct":$used_pct,"window_size":$window_size,"total_input":$total_input,"total_output":$total_output,"exceeds_200k":$exceeds_200k}
 EOF
 
 mv "$tmpfile" "$outfile" 2>/dev/null || cp "$tmpfile" "$outfile" 2>/dev/null

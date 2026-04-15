@@ -1,3 +1,10 @@
+---
+description: Pre-PR quality checks — build, tests, coverage, lint, security
+user-invocable: true
+effort: high
+context: fork
+---
+
 # /aam-quality-gate - Pre-PR Quality Checks
 
 Run this before creating any pull request. Runs the full quality checklist — all checks, every time.
@@ -18,6 +25,12 @@ Execute every check in order. Fix failures before proceeding to the next check.
 - [ ] **Test suite passes** — Run the full test suite. Zero failing tests.
 - [ ] **No debug statements** — Search for `console.log`, `debugger`, `print(`, `puts`, `binding.pry` in changed files. Remove any found.
 
+### Negative test enforcement
+
+- [ ] **Error paths are tested** — Read `negativeTestEnforcement` from `.pr-pipeline.json`. If `enabled` is `true` (default), search test files touched by this PR for assertions that exercise error paths — look for the configured `patterns` (e.g., `throw`, `reject`, `error`, `invalid`, `not found`). Each new function or endpoint that can fail should have at least `minNegativeTests` test(s) covering the failure case. If missing, write them before proceeding.
+
+If `negativeTestEnforcement.enabled` is `false` in `.pr-pipeline.json`, skip this check.
+
 ### Coverage & Lint
 
 - [ ] **Test coverage delta** — Run coverage and confirm new code is covered. Flag any untested branches in critical paths.
@@ -36,8 +49,8 @@ Execute every check in order. Fix failures before proceeding to the next check.
 
 After running checks:
 
-- **All pass:** "Quality gate passed. Creating PR."
-- **Failures found:** List each failure with the specific file and line. Fix all failures before creating the PR. During autonomous sprint execution, fix failures without asking — do not prompt for override.
+- **All pass:** Write the gate-pass marker for hook enforcement: `bash -c 'date +%s > .quality-gate-pass'`. Then announce: "Quality gate passed. Creating PR."
+- **Failures found:** List each failure with the specific file and line. Fix all failures before creating the PR. During autonomous sprint execution, fix failures without asking — do not prompt for override. Remove stale marker if present: `bash -c 'rm -f .quality-gate-pass'`.
 
 If invoked manually outside a sprint and the user explicitly requests an override: create the PR and add a note to the PR description: "Quality gate override: [reason for override]."
 

@@ -24,6 +24,7 @@
 #>
 
 param(
+    [string]$Agent = "sprint-master",
     [string]$Prompt = "",
     [string]$PermissionMode = ""
 )
@@ -44,6 +45,10 @@ while ($true) {
 
     # Build the Claude argument list
     $claudeArgs = @()
+    if ($Agent) {
+        $claudeArgs += "--agent"
+        $claudeArgs += $Agent
+    }
     if ($PermissionMode) {
         $claudeArgs += "--permission-mode"
         $claudeArgs += $PermissionMode
