@@ -6,3 +6,11 @@
 
 | ID | Type | Title | Source | Added |
 |---|---|---|---|---|
+| B-001 | feature | Streaming responses (SSE or chunked) from the `/claude` endpoint | strategy-roadmap Phase 2 | 2026-04-12 |
+| B-002 | feature | System prompt defaults — allow per-route or server-level system prompts | strategy-roadmap Phase 2 | 2026-04-12 |
+| B-003 | feature | Request logging (structured, per-request, with redaction) | strategy-roadmap Phase 2 | 2026-04-12 |
+| B-004 | feature | Health check enhancements — deeper CLI/API liveness, latency histograms | strategy-roadmap Phase 2 | 2026-04-12 |
+| B-005 | feature | Cross-platform CLI support (Unix) — currently Windows-only | strategy-roadmap Phase 3 (pending decision: is Unix support actually needed?) | 2026-04-12 |
+| B-006 | feature | Retry logic with exponential backoff for transient CLI/API failures | strategy-roadmap Phase 3 | 2026-04-12 |
+| B-007 | feature | Graceful degradation — fall back to API when CLI is unavailable (already partial; extend) | strategy-roadmap Phase 3 | 2026-04-12 |
+| B-008 | feature | Optional rate limiting per caller/API key | strategy-roadmap Phase 3 | 2026-04-12 |

@@ -53,6 +53,12 @@ Chose: plain Node.js JavaScript over TypeScript. Why: minimal codebase (~160 lin
 ### Stateless / no database | 2026-03-20 | Status: Active
 Chose: no database, no conversation persistence. Why: gateway is a thin proxy -- each request is independent. Tradeoff: no multi-turn conversation support without the caller managing history.
 
+### max_tokens: caller-configurable vs. fixed | 2026-04-12 | Status: Revisit
+Deferred until a caller actually needs a different limit. Current behavior: fixed server-side default. Why defer: no real caller is blocked; YAGNI. Revisit when: a gateway consumer reports hitting the cap or needing a smaller cap for cost control.
+
+### Cross-platform (Unix) CLI support | 2026-04-12 | Status: Revisit
+Deferred. Current implementation is Windows-only due to the PowerShell `-EncodedCommand` choice. Why defer: no Unix runtime currently depends on the gateway. Revisit when: any consumer needs to run the gateway on Linux/macOS (e.g., cloud deployment, developer on a non-Windows machine).
+
 ---
 
 ## Known Debt
