@@ -42,6 +42,15 @@
     ],
     "SessionStart": [
       {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/scripts/session-start-continuation.sh"
+          }
+        ]
+      },
+      {
         "matcher": "",
         "hooks": [
           {
@@ -58,6 +67,17 @@
           {
             "type": "command",
             "command": "bash .claude/scripts/stop-failure-hook.sh"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/scripts/session-end-cycle.sh"
           }
         ]
       }
