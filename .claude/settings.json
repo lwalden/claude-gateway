@@ -16,6 +16,15 @@
             "command": "bash .claude/scripts/context-cycle-hook.sh"
           }
         ]
+      },
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/scripts/sprint-phase-guard.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -47,6 +56,10 @@
           {
             "type": "command",
             "command": "bash .claude/scripts/session-start-continuation.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/scripts/hlpm-ping.sh session_start"
           }
         ]
       },
@@ -78,6 +91,10 @@
           {
             "type": "command",
             "command": "bash .claude/scripts/session-end-cycle.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/scripts/hlpm-ping.sh session_end"
           }
         ]
       }
