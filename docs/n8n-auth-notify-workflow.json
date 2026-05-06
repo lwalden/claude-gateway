@@ -1,0 +1,102 @@
+{
+  "name": "Claude Gateway — Auth Expiry Alerts",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "claude-gateway-auth-notify",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "claude-gateway-auth-notify"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-001",
+              "leftValue": "={{ $json.body.subject }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0002-0002-0002-000000000002",
+      "name": "Has Subject",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $vars.ALERT_FROM_EMAIL || 'alerts@example.com' }}",
+        "toEmail": "={{ $vars.ALERT_TO_EMAIL }}",
+        "subject": "={{ $json.body.subject }}",
+        "emailType": "text",
+        "message": "=Claude Gateway auth token alert\n\nStatus: {{ $json.body.isNewIncident ? 'NEW INCIDENT' : 'ONGOING INCIDENT' }}\nIncident started: {{ $json.body.incidentStart }}\nAlert sent at:   {{ $json.body.timestamp }}\n\nThe Claude CLI OAuth token has expired. The gateway will fall back to the Anthropic API (if configured) until the token is refreshed.\n\nTo fix: run `claude` in a terminal on the gateway host and complete the login flow, or ensure CLAUDE_OAUTH_CLIENT_ID is set so auto-refresh can run.",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0003-0003-0003-000000000003",
+      "name": "Send Alert Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [680, 300],
+      "credentials": {
+        "smtp": {
+          "id": "REPLACE_WITH_YOUR_SMTP_CREDENTIAL_ID",
+          "name": "SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Has Subject",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Subject": {
+      "main": [
+        [
+          {
+            "node": "Send Alert Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["claude-gateway", "monitoring"],
+  "triggerCount": 1,
+  "updatedAt": "2026-05-06T00:00:00.000Z",
+  "versionId": "v1"
+}
