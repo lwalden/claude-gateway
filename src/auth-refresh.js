@@ -7,6 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { checkAndNotify } = require('./auth-notify');
 
 const CREDENTIALS_PATH = path.join(os.homedir(), '.claude', '.credentials.json');
 const TOKEN_URL = 'https://platform.claude.com/v1/oauth/token';
@@ -47,6 +48,9 @@ async function refreshTokens() {
   }
 
   const hoursRemaining = (oauth.expiresAt - Date.now()) / 1000 / 3600;
+  const isExpired = hoursRemaining <= 0;
+  await checkAndNotify(isExpired);
+
   if (hoursRemaining > REFRESH_THRESHOLD_MS / 1000 / 3600) {
     console.log(`[auth-refresh] Token valid for ${hoursRemaining.toFixed(1)}h — no refresh needed`);
     return;
@@ -87,6 +91,7 @@ async function refreshTokens() {
     writeCredentials(creds);
     const newExpiry = new Date(creds.claudeAiOauth.expiresAt).toLocaleTimeString();
     console.log(`[auth-refresh] Token refreshed — new expiry: ${newExpiry}`);
+    await checkAndNotify(false);
   } catch (err) {
     console.error('[auth-refresh] Refresh error:', err.message);
   }
