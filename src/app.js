@@ -61,7 +61,7 @@ function createApp({ gatewayApiKey } = {}) {
       }
       const nowMs = Date.now();
       const hoursRemaining = Math.round((expiresAt - nowMs) / 1000 / 60 / 60 * 10) / 10;
-      const status = hoursRemaining <= 0 ? 'expired' : hoursRemaining < 2 ? 'expiring' : 'ok';
+      const status = hoursRemaining <= 0 ? 'expired' : 'ok';
       res.json({ status, expiresAt, hoursRemaining });
     } catch (err) {
       res.json({ status: 'unknown', reason: 'could not read credentials file' });

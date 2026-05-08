@@ -48,6 +48,14 @@ temp/
 # Uncomment if you use Claude Code's auto memory feature:
 # .claude/memory/
 
+# AAM / Claude Code runtime hook state (not for version control)
+.correction-state
+.sprint-phase-guard-count
+.sprint-tool-count
+.context-usage
+.sprint-continue-signal
+.sprint-continuation.md
+
 # Stack-specific entries added below by /setup:
 
 # Node.js
