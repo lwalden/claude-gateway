@@ -2,6 +2,8 @@
 
 HTTP gateway to Claude. Runs the local Claude CLI on your Claude **subscription** (OAuth) — a single `POST /ask` endpoint any tool, script, or service can call over HTTP. Subscription-only: there is no Anthropic API key and no API fallback.
 
+> **Calling a gateway from your app?** → **[Integration guide](docs/INTEGRATION.md)**. The rest of this README is about running your own instance.
+
 ## Requirements
 
 - Node.js 18+
