@@ -1,7 +1,7 @@
 {
   "name": "claude-gateway",
-  "version": "0.1.0",
-  "description": "Local HTTP gateway to Claude — CLI-first (subscription), Anthropic API fallback",
+  "version": "0.2.0",
+  "description": "Local HTTP gateway to Claude — subscription-only via the Claude CLI (OAuth); no API key",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",

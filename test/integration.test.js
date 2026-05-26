@@ -67,36 +67,37 @@ describe('POST /ask — full flow', () => {
 });
 
 describe('POST /ask — error propagation', () => {
-  test('returns 502 when ask() throws', async () => {
-    mockAsk.mockRejectedValue(new Error('CLI and API both failed'));
+  test('returns 502 with a generic message when ask() throws an unknown error', async () => {
+    mockAsk.mockRejectedValue(new Error('unexpected internal failure with C:\\secret\\path'));
 
     const res = await authed(request(app).post('/ask'))
       .send({ prompt: 'test' });
 
     expect(res.status).toBe(502);
-    // Error is sanitized — unknown messages get a generic response
+    // Error is sanitized — unknown messages get a generic response, no detail leak
     expect(res.body.error).toBe('An internal error occurred while processing your request');
+    expect(res.body.error).not.toContain('secret');
     expect(typeof res.body.durationMs).toBe('number');
   });
 
-  test('passes through "API fallback is disabled" error message', async () => {
-    mockAsk.mockRejectedValue(new Error('CLI unavailable and API fallback is disabled'));
+  test('passes through the "CLI invocation timed out" message', async () => {
+    mockAsk.mockRejectedValue(new Error('CLI invocation timed out'));
 
     const res = await authed(request(app).post('/ask'))
       .send({ prompt: 'test' });
 
     expect(res.status).toBe(502);
-    expect(res.body.error).toContain('API fallback is disabled');
+    expect(res.body.error).toContain('CLI invocation timed out');
   });
 
-  test('passes through "ANTHROPIC_API_KEY is not set" error message', async () => {
-    mockAsk.mockRejectedValue(new Error('CLI unavailable and ANTHROPIC_API_KEY is not set'));
+  test('passes through the "CLI returned empty response" message', async () => {
+    mockAsk.mockRejectedValue(new Error('CLI returned empty response'));
 
     const res = await authed(request(app).post('/ask'))
       .send({ prompt: 'test' });
 
     expect(res.status).toBe(502);
-    expect(res.body.error).toContain('ANTHROPIC_API_KEY is not set');
+    expect(res.body.error).toContain('CLI returned empty response');
   });
 });
 

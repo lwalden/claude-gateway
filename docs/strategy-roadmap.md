@@ -7,7 +7,7 @@
 ## What & Why
 
 **Problem:** Other local tools and scripts need to call Claude programmatically, but the Claude CLI is interactive-first and the Anthropic API costs per token. There's no simple HTTP interface that tries the subscription CLI first and falls back to the API.
-**Vision:** A local HTTP gateway that any tool can `POST` to for Claude responses, using the subscription when possible and the API when not.
+**Vision:** A local HTTP gateway that any tool can `POST` to for Claude responses, using the Claude subscription exclusively (no API key). *(Updated 2026-05-25: the original API-fallback design was dropped — see Roadmap History and DECISIONS.md.)*
 **Target Users:** The developer (single-user, local use) and their local tooling (scripts, automations, other services).
 
 ---
@@ -77,9 +77,9 @@
 
 > Log of significant plan changes. Populated by `/aam-revise` when features are added, changed, dropped, or reprioritized.
 
-<!-- | Date | Change | Reason |
+| Date | Change | Reason |
 |------|--------|--------|
-| [DATE] | [Added / Changed / Dropped / Moved]: [feature] | [reason] | -->
+| 2026-05-25 | Dropped: Anthropic API fallback and API key (`ANTHROPIC_API_KEY`, `API_FALLBACK_ENABLED`, `CONTAINER_MODE`). Gateway is now subscription-only via the Claude CLI. | Owner directive: nothing should use or reference an API key. Removes per-token billing risk and recurring confusion. See DECISIONS.md "Subscription-only — no API key". |
 
 ---
 

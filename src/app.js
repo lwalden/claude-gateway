@@ -120,19 +120,13 @@ function createApp({ gatewayApiKey } = {}) {
 }
 
 function sanitizeErrorMessage(message) {
-  // Strip Anthropic API response bodies (may contain internal details)
-  if (message.startsWith('Anthropic API error')) {
-    const statusMatch = message.match(/^Anthropic API error (\d+)/);
-    return statusMatch
-      ? `Upstream API error (status ${statusMatch[1]})`
-      : 'Upstream API error';
-  }
-  // Pass through known safe messages
+  // Pass through known safe CLI messages; everything else is genericized so no
+  // internal detail leaks. The gateway is subscription-only — there is no API path.
   const safeMessages = [
-    'CLI unavailable and ANTHROPIC_API_KEY is not set',
-    'CLI unavailable and API fallback is disabled',
     'CLI returned empty response',
-    'API returned empty response'
+    'CLI invocation timed out',
+    'claude CLI not found',
+    'CLI invocation failed'
   ];
   for (const safe of safeMessages) {
     if (message.includes(safe)) return message;
