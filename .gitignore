@@ -55,6 +55,8 @@ temp/
 .context-usage
 .sprint-continue-signal
 .sprint-continuation.md
+.exec/
+.quality-review-result.json
 
 # Stack-specific entries added below by /setup:
 
