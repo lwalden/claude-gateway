@@ -73,24 +73,15 @@ describe('System and model type validation', () => {
 });
 
 describe('Error message sanitization', () => {
-  test('sanitizes Anthropic API error bodies', async () => {
-    mockAsk.mockRejectedValue(new Error('Anthropic API error 429: {"type":"error","error":{"type":"rate_limit_error","message":"too many requests"}}'));
+  test('passes through known safe CLI messages', async () => {
+    mockAsk.mockRejectedValue(new Error('CLI invocation timed out'));
     const res = await authed(request(app).post('/ask'))
       .send({ prompt: 'test' });
     expect(res.status).toBe(502);
-    expect(res.body.error).toBe('Upstream API error (status 429)');
-    expect(res.body.error).not.toContain('rate_limit_error');
+    expect(res.body.error).toBe('CLI invocation timed out');
   });
 
-  test('passes through known safe error messages', async () => {
-    mockAsk.mockRejectedValue(new Error('Claude CLI unavailable and ANTHROPIC_API_KEY is not set — cannot fulfill request'));
-    const res = await authed(request(app).post('/ask'))
-      .send({ prompt: 'test' });
-    expect(res.status).toBe(502);
-    expect(res.body.error).toContain('ANTHROPIC_API_KEY is not set');
-  });
-
-  test('returns generic message for unexpected errors', async () => {
+  test('returns generic message for unexpected errors (no internal detail leaks)', async () => {
     mockAsk.mockRejectedValue(new Error('ECONNREFUSED 127.0.0.1:443 — stack trace with internal paths'));
     const res = await authed(request(app).post('/ask'))
       .send({ prompt: 'test' });

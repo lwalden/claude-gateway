@@ -21,7 +21,7 @@ const app = createApp();
 app.listen(PORT, () => {
   console.log(`claude-gateway listening on port ${PORT}`);
   console.log(`  Auth:     ${process.env.GATEWAY_API_KEY ? 'enabled' : 'MISSING — set GATEWAY_API_KEY'}`);
-  console.log(`  CLI:      claude --print`);
-  console.log(`  Fallback: Anthropic API (${process.env.ANTHROPIC_MODEL || 'claude-opus-4-6'})`);
+  console.log(`  CLI:      claude --print (OAuth subscription)`);
+  console.log(`  Model:    ${process.env.ANTHROPIC_MODEL || 'claude-opus-4-6'}`);
   startAutoRefresh();
 });

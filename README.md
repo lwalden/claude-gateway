@@ -1,13 +1,11 @@
 # claude-gateway
 
-HTTP gateway to Claude. Tries the local Claude CLI (subscription) first, falls back to the Anthropic API if the CLI is unavailable or times out.
-
-Any tool, script, or service that can make an HTTP request can get Claude responses via a single `POST /ask` endpoint.
+HTTP gateway to Claude. Runs the local Claude CLI on your Claude **subscription** (OAuth) — a single `POST /ask` endpoint any tool, script, or service can call over HTTP. Subscription-only: there is no Anthropic API key and no API fallback.
 
 ## Requirements
 
 - Node.js 18+
-- [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated (`claude -p "hello"` should work)
+- [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) installed and signed in to your subscription (`claude -p "hello"` should return a reply)
 - Windows (CLI invocation uses PowerShell; cross-platform is on the roadmap)
 
 ## Setup
@@ -24,10 +22,8 @@ Edit `.env` with your values:
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `GATEWAY_API_KEY` | Yes | - | Bearer token callers must send |
-| `ANTHROPIC_API_KEY` | No | - | API key for fallback when CLI is unavailable |
-| `ANTHROPIC_MODEL` | No | `claude-opus-4-6` | Model for API fallback calls |
-| `CLI_TIMEOUT_MS` | No | `30000` | Timeout before falling back to API |
-| `API_FALLBACK_ENABLED` | No | `true` | Set `false` to disable API fallback; CLI failures then return 502 |
+| `ANTHROPIC_MODEL` | No | `claude-opus-4-6` | Model passed to `claude --model` |
+| `CLI_TIMEOUT_MS` | No | `30000` | Timeout (ms) for the Claude CLI invocation |
 | `PORT` | No | `3131` | Port the gateway listens on |
 | `CLAUDE_OAUTH_CLIENT_ID` | No | - | Claude Code OAuth client ID; enables automatic token refresh |
 | `LOG_DIR` | No | `./logs` | Directory for per-request log files |
@@ -60,7 +56,7 @@ curl -X POST http://localhost:3131/ask \
 |-------|------|----------|-------------|
 | `prompt` | string | Yes | The prompt to send to Claude |
 | `system` | string | No | System prompt |
-| `model` | string | No | Model override; passed to the CLI and selects the billed model on API fallback |
+| `model` | string | No | Model override; passed to `claude --model` |
 | `jsonSchema` | object | No | JSON Schema to enforce structured output |
 
 **Response:**
@@ -74,7 +70,7 @@ curl -X POST http://localhost:3131/ask \
 }
 ```
 
-`source` is `"cli"` when the subscription CLI handled the request, or `"api"` when it fell back to the Anthropic API.
+`source` is always `"cli"` and `model` is always `"subscription"` (both retained for backward compatibility). If `jsonSchema` was supplied, `response` is a JSON *string* the caller must parse.
 
 ### `GET /health`
 
@@ -95,7 +91,7 @@ npm test
 1. Prompt is written to a temp file
 2. PowerShell pipes the file to `claude -p` via `Get-Content | claude`
 3. If the CLI succeeds, the response is returned
-4. If the CLI fails or times out, the request is retried against the Anthropic API (if enabled)
+4. If the CLI fails or times out, the request fails with `502` — there is no API fallback
 5. Temp file is cleaned up regardless of outcome
 
 The temp file approach avoids PowerShell's 32KB command-line limit, which large prompts (e.g. batch remediation requests) can exceed.

@@ -1,6 +1,3 @@
-// Mock global fetch for API fallback tests
-global.fetch = jest.fn();
-
 // execFile mock — must support util.promisify via [custom] symbol
 const { promisify } = require('util');
 const mockExecFile = jest.fn();
@@ -20,8 +17,7 @@ jest.mock('fs', () => {
 });
 const fs = require('fs');
 
-// Set env defaults for tests
-process.env.ANTHROPIC_API_KEY = 'test-api-key';
+// Set env defaults for tests (subscription-only — no ANTHROPIC_API_KEY)
 process.env.ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
 
 const { ask } = require('../src/claude');
@@ -45,20 +41,13 @@ function mockCliTimeout() {
   mockExecFileAsync.mockRejectedValue(err);
 }
 
-function mockApiSuccess(text = 'Hello from API') {
-  fetch.mockResolvedValue({
-    ok: true,
-    json: async () => ({ content: [{ text }] })
-  });
-}
-
 beforeEach(() => {
   jest.clearAllMocks();
   // Restore the custom symbol after clearAllMocks
   mockExecFile[promisify.custom] = mockExecFileAsync;
 });
 
-describe('ask() — CLI path', () => {
+describe('ask() — CLI path (OAuth subscription)', () => {
   test('returns CLI response with source "cli" on success', async () => {
     mockCliSuccess('Hello from CLI\n');
 
@@ -69,7 +58,6 @@ describe('ask() — CLI path', () => {
       model: 'subscription'
     });
     expect(mockExecFileAsync).toHaveBeenCalled();
-    expect(fetch).not.toHaveBeenCalled();
   });
 
   test('calls powershell.exe with -EncodedCommand', async () => {
@@ -188,12 +176,10 @@ describe('ask() — CLI path', () => {
     expect(fs.unlinkSync).toHaveBeenCalledWith(tmpPath);
   });
 
-  test('cleans up temp file after failed CLI call', async () => {
+  test('cleans up temp file even when the CLI call fails', async () => {
     mockCliFailure();
-    mockApiSuccess();
 
-    await ask({ prompt: 'test' });
-
+    await expect(ask({ prompt: 'test' })).rejects.toThrow();
     expect(fs.unlinkSync).toHaveBeenCalledTimes(1);
   });
 
@@ -219,19 +205,8 @@ describe('ask() — CLI path', () => {
     expect(result.response).toBe('spaced response');
   });
 
-  test('falls back to API when CLI returns empty output', async () => {
-    mockCliSuccess('   \n');
-    mockApiSuccess();
-
-    const result = await ask({ prompt: 'test' });
-    expect(result.source).toBe('api');
-  });
-
-  test('includes --output-format json and --json-schema when jsonSchema provided', async () => {
-    mockCliSuccess(JSON.stringify({
-      type: 'result',
-      structured_output: { fixedHtml: '<img alt="test">', explanation: 'Added alt', wcagCriterion: '1.1.1', isApplicable: true }
-    }));
+  test('includes --json-schema when jsonSchema provided', async () => {
+    mockCliSuccess(JSON.stringify({ fixedHtml: '<img alt="test">' }));
 
     const schema = { type: 'object', properties: { fixedHtml: { type: 'string' } }, required: ['fixedHtml'] };
     await ask({ prompt: 'test', jsonSchema: schema });
@@ -239,7 +214,6 @@ describe('ask() — CLI path', () => {
     const [, args] = mockExecFileAsync.mock.calls[0];
     const encoded = args[args.indexOf('-EncodedCommand') + 1];
     const decoded = Buffer.from(encoded, 'base64').toString('utf16le');
-    expect(decoded).not.toContain('--output-format json');
     expect(decoded).toContain('--json-schema');
   });
 
@@ -265,233 +239,34 @@ describe('ask() — CLI path', () => {
     const encoded = args[args.indexOf('-EncodedCommand') + 1];
     const decoded = Buffer.from(encoded, 'base64').toString('utf16le');
     expect(decoded).not.toContain('--json-schema');
-    expect(decoded).not.toContain('--output-format');
   });
 });
 
-describe('ask() — CLI failure triggers API fallback', () => {
-  test('falls back to API when CLI times out (killed)', async () => {
+describe('ask() — CLI failures throw (no API fallback)', () => {
+  test('throws "CLI invocation timed out" when the CLI times out', async () => {
     mockCliTimeout();
-    mockApiSuccess();
-
-    const result = await ask({ prompt: 'test' });
-    expect(result.source).toBe('api');
-    expect(result.response).toBe('Hello from API');
-    expect(fetch).toHaveBeenCalledTimes(1);
+    await expect(ask({ prompt: 'test' })).rejects.toThrow(/CLI invocation timed out/);
   });
 
-  test('falls back to API when CLI exec errors (ENOENT)', async () => {
+  test('throws "claude CLI not found" when the executable is missing (ENOENT)', async () => {
     const err = new Error('spawn powershell.exe ENOENT');
     err.code = 'ENOENT';
     mockCliFailure({ error: err });
-    mockApiSuccess();
-
-    const result = await ask({ prompt: 'test' });
-    expect(result.source).toBe('api');
+    await expect(ask({ prompt: 'test' })).rejects.toThrow(/claude CLI not found/);
   });
 
-  test('falls back to API when CLI exits with error', async () => {
-    mockCliFailure({ stderr: 'some error' });
-    mockApiSuccess();
-
-    const result = await ask({ prompt: 'test' });
-    expect(result.source).toBe('api');
+  test('throws "CLI invocation failed" when the CLI exits with an error', async () => {
+    mockCliFailure({ stderr: 'some internal error with /paths' });
+    await expect(ask({ prompt: 'test' })).rejects.toThrow(/CLI invocation failed/);
   });
 
-  test('uses caller-specified model for API fallback', async () => {
-    mockCliFailure();
-    mockApiSuccess();
-
-    await ask({ prompt: 'test', model: 'claude-haiku-4-5-20251001' });
-    const fetchBody = JSON.parse(fetch.mock.calls[0][1].body);
-    expect(fetchBody.model).toBe('claude-haiku-4-5-20251001');
+  test('throws "CLI returned empty response" when the CLI emits nothing', async () => {
+    mockCliSuccess('   \n');
+    await expect(ask({ prompt: 'test' })).rejects.toThrow(/CLI returned empty response/);
   });
 
-  test('uses default model when none specified', async () => {
-    mockCliFailure();
-    mockApiSuccess();
-
-    const result = await ask({ prompt: 'test' });
-    expect(result.model).toBe('claude-sonnet-4-20250514');
-  });
-
-  test('sends system prompt to API when provided', async () => {
-    mockCliFailure();
-    mockApiSuccess();
-
-    await ask({ prompt: 'test', system: 'be concise' });
-    const fetchBody = JSON.parse(fetch.mock.calls[0][1].body);
-    expect(fetchBody.system).toBe('be concise');
-  });
-});
-
-describe('ask() — API path failures', () => {
-  test('throws an "Anthropic API error <status>" message so the gateway can surface the upstream status', async () => {
-    mockCliFailure();
-    fetch.mockResolvedValue({
-      ok: false,
-      status: 500,
-      text: async () => 'Internal Server Error'
-    });
-
-    // Message must start with "Anthropic API error <status>" so app.js's
-    // sanitizeErrorMessage turns it into "Upstream API error (status 500)".
-    await expect(ask({ prompt: 'test' })).rejects.toThrow(/^Anthropic API error 500/);
-  });
-
-  test('carries the upstream status code in the thrown message (e.g. 429)', async () => {
-    mockCliFailure();
-    fetch.mockResolvedValue({
-      ok: false,
-      status: 429,
-      text: async () => '{"type":"error","error":{"type":"rate_limit_error"}}'
-    });
-
-    await expect(ask({ prompt: 'test' })).rejects.toThrow(/Anthropic API error 429/);
-  });
-
-  test('throws when CLI fails and no ANTHROPIC_API_KEY', async () => {
-    const originalKey = process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
-
-    jest.resetModules();
-
-    const mockFreshAsync = jest.fn().mockRejectedValue(new Error('CLI failed'));
-    const mockFreshExecFile = Object.assign(jest.fn(), { [promisify.custom]: mockFreshAsync });
-    jest.mock('child_process', () => ({
-      execFile: mockFreshExecFile
-    }));
-
-    const { ask: freshAsk } = require('../src/claude');
-    await expect(freshAsk({ prompt: 'test' })).rejects.toThrow(/ANTHROPIC_API_KEY is not set/);
-
-    process.env.ANTHROPIC_API_KEY = originalKey;
-  });
-
-  test('throws when API returns empty content', async () => {
-    mockCliFailure();
-    fetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ content: [] })
-    });
-
-    await expect(ask({ prompt: 'test' })).rejects.toThrow(/empty response/);
-  });
-});
-
-describe('ask() — API fallback with jsonSchema (tool_use)', () => {
-  beforeEach(() => {
-    // Force API path by making CLI fail
-    mockCliFailure();
-  });
-
-  test('passes jsonSchema as tool_use when provided in API fallback', async () => {
-    const schema = {
-      type: 'object',
-      properties: { fixedHtml: { type: 'string' }, explanation: { type: 'string' } },
-      required: ['fixedHtml']
-    };
-
-    fetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        content: [{
-          type: 'tool_use',
-          id: 'toolu_01',
-          name: 'structured_output',
-          input: { fixedHtml: '<img alt="test">', explanation: 'Added alt' }
-        }]
-      })
-    });
-
-    await ask({ prompt: 'test', jsonSchema: schema });
-
-    const fetchBody = JSON.parse(fetch.mock.calls[0][1].body);
-    expect(fetchBody.tools).toEqual([{
-      name: 'structured_output',
-      description: 'Return the response in this exact JSON structure',
-      input_schema: schema
-    }]);
-    expect(fetchBody.tool_choice).toEqual({ type: 'tool', name: 'structured_output' });
-  });
-
-  test('extracts tool_use input from API response when jsonSchema was provided', async () => {
-    const schema = { type: 'object', properties: { fixedHtml: { type: 'string' } } };
-    const toolInput = { fixedHtml: '<img alt="fixed">', explanation: 'Fixed it' };
-
-    fetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        content: [{
-          type: 'tool_use',
-          id: 'toolu_01',
-          name: 'structured_output',
-          input: toolInput
-        }]
-      })
-    });
-
-    const result = await ask({ prompt: 'test', jsonSchema: schema });
-    expect(result.response).toBe(JSON.stringify(toolInput));
-    expect(result.source).toBe('api');
-  });
-
-  test('handles array jsonSchema for batch responses', async () => {
-    const arraySchema = {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: { fixedHtml: { type: 'string' }, explanation: { type: 'string' } },
-        required: ['fixedHtml']
-      }
-    };
-
-    const batchResult = [
-      { fixedHtml: '<img alt="a">', explanation: 'First' },
-      { fixedHtml: '<img alt="b">', explanation: 'Second' }
-    ];
-
-    fetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        content: [{
-          type: 'tool_use',
-          id: 'toolu_01',
-          name: 'structured_output',
-          input: batchResult
-        }]
-      })
-    });
-
-    await ask({ prompt: 'test', jsonSchema: arraySchema });
-
-    const fetchBody = JSON.parse(fetch.mock.calls[0][1].body);
-    expect(fetchBody.tools[0].input_schema).toEqual(arraySchema);
-    expect(fetchBody.tools[0].input_schema.type).toBe('array');
-  });
-
-  test('does not include tools when jsonSchema is not provided', async () => {
-    mockApiSuccess('plain text response');
-
-    await ask({ prompt: 'test' });
-
-    const fetchBody = JSON.parse(fetch.mock.calls[0][1].body);
-    expect(fetchBody.tools).toBeUndefined();
-    expect(fetchBody.tool_choice).toBeUndefined();
-  });
-
-  test('falls back to text extraction when tool_use block is missing despite jsonSchema', async () => {
-    const schema = { type: 'object', properties: { fixedHtml: { type: 'string' } } };
-
-    fetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        content: [{ type: 'text', text: '{"fixedHtml": "<img alt=\\"fallback\\">"}' }]
-      })
-    });
-
-    const result = await ask({ prompt: 'test', jsonSchema: schema });
-    expect(result.response).toBe('{"fixedHtml": "<img alt=\\"fallback\\">"}');
-    expect(result.source).toBe('api');
+  test('does not leak raw error detail (no stderr/paths) in the thrown message', async () => {
+    mockCliFailure({ error: Object.assign(new Error('ECONNREFUSED C:\\Users\\secret\\path'), {}) });
+    await expect(ask({ prompt: 'test' })).rejects.toThrow(/^CLI invocation failed$/);
   });
 });

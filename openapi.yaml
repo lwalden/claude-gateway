@@ -1,12 +1,12 @@
 openapi: 3.1.0
 info:
   title: claude-gateway
-  version: 0.1.0
+  version: 0.2.0
   description: |
-    HTTP gateway to Claude. Each `POST /ask` is tried against the local Claude
-    CLI first (uses the host's Claude subscription, no per-token cost) and falls
-    back to the Anthropic API when the CLI is unavailable, times out, or returns
-    empty. The gateway is a stateless thin proxy: every request is independent
+    HTTP gateway to Claude. Each `POST /ask` runs the local Claude CLI using the
+    host's Claude **subscription** (OAuth). There is **no Anthropic API-key path**
+    — the gateway is subscription-only; if the CLI fails, the request fails (no
+    fallback). The gateway is a stateless thin proxy: every request is independent
     and there is no conversation history or session management — the caller owns
     any multi-turn context.
 
@@ -31,24 +31,19 @@ info:
     - `prompt` and `system` are each capped at 100,000 characters; `model` at 256.
 
     ## Response `source`/`model`
-    - `source: "cli"` → served by the local CLI via the OAuth subscription;
-      `model` is reported as `"subscription"` (the requested model is passed to
-      `claude --model`, not echoed back).
-    - `source: "api"` → served by the Anthropic API; `model` is the resolved
-      model id (the request's `model`, or the server's `ANTHROPIC_MODEL` default).
+    - `source` is always `"cli"` (subscription-only) and `model` is always
+      `"subscription"`. The requested `model` is passed to `claude --model`, not
+      echoed back. These two fields are retained for backward compatibility.
 
     ## Known constraints (see DECISIONS.md)
-    - `max_tokens` is fixed server-side (8192 on the API path) and is **not**
-      caller-configurable.
     - No request/response streaming.
     - No API versioning header or `/version` route yet — pin to this `info.version`.
-    - The CLI path has a server-side timeout (~30 s by default, `CLI_TIMEOUT_MS`).
-      Set your HTTP client timeout to at least 35 s to avoid spurious failures.
-    - No server-side rate limiting — callers must throttle themselves. Retrying on
-      `502` re-attempts the same paid fallback, so back off rather than hammering.
-    - When deployed with `CONTAINER_MODE=true` the CLI path is skipped entirely and
-      **every** request hits the paid Anthropic API (`source` is always `"api"`).
-      Subscription cost-isolation is lost in that mode.
+    - The CLI invocation has a server-side timeout (~30 s by default,
+      `CLI_TIMEOUT_MS`). Set your HTTP client timeout to at least 35 s to avoid
+      spurious failures.
+    - No server-side rate limiting — callers must throttle themselves; the
+      subscription has its own usage limits.
+    - Windows-only: the CLI is invoked via PowerShell.
 
 servers:
   - url: http://localhost:3131
@@ -66,8 +61,8 @@ paths:
       tags: [ask]
       summary: Ask Claude a question
       description: |
-        Sends `prompt` (and optional `system`, `model`, `jsonSchema`) to Claude
-        via the CLI-first / API-fallback path. The `prompt` is trimmed before use.
+        Sends `prompt` (and optional `system`, `model`, `jsonSchema`) to the local
+        Claude CLI on the OAuth subscription. The `prompt` is trimmed before use.
       operationId: ask
       security:
         - bearerAuth: []
@@ -100,26 +95,19 @@ paths:
                     required: [name, age]
       responses:
         '200':
-          description: Claude responded successfully.
+          description: Claude responded successfully (via the subscription CLI).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AskResponse'
               examples:
-                cli:
-                  summary: Served by the local CLI
+                text:
+                  summary: Plain text reply
                   value:
                     response: "The CAP theorem states a distributed store can guarantee only two of consistency, availability, and partition tolerance."
                     source: "cli"
                     model: "subscription"
                     durationMs: 1840
-                api:
-                  summary: Served by the Anthropic API fallback
-                  value:
-                    response: "Three risks: regulatory exposure, vendor lock-in, and data latency."
-                    source: "api"
-                    model: "claude-opus-4-6"
-                    durationMs: 2210
                 structured:
                   summary: Structured output — `response` is a JSON *string* the caller must parse
                   value:
@@ -164,19 +152,15 @@ paths:
                 error: "GATEWAY_API_KEY is not set on the server"
         '502':
           description: |
-            Upstream failure — the CLI path produced nothing and the API fallback
-            failed, is disabled, or has no key. Error bodies are sanitized; callers
-            never receive internal detail. Observed messages:
-            `CLI unavailable and ANTHROPIC_API_KEY is not set`,
-            `CLI unavailable and API fallback is disabled`,
-            `CLI returned empty response`, `API returned empty response`, or — when
-            the Anthropic API itself returns a non-2xx — `Upstream API error
-            (status <N>)` carrying the upstream HTTP status (the raw upstream body is
-            logged server-side, never returned to the caller).
-
-            Do not retry immediately: a retry re-attempts the same paid fallback and,
-            if the cause was an upstream 429, will likely 429 again — use exponential
-            back-off.
+            The Claude CLI invocation failed — there is no fallback, so the request
+            fails. Error bodies are sanitized; callers never receive internal detail.
+            Observed messages: `CLI returned empty response`,
+            `CLI invocation timed out`, `claude CLI not found`,
+            `CLI invocation failed`, or the generic
+            `An internal error occurred while processing your request` for anything
+            unexpected. A timeout most often means the model took longer than
+            `CLI_TIMEOUT_MS`; `claude CLI not found` / a "not logged in" failure
+            means the host's subscription session needs attention.
           content:
             application/json:
               schema:
@@ -215,8 +199,8 @@ paths:
       summary: Claude CLI credential expiry check
       description: |
         Reports how long the host's Claude CLI OAuth credentials remain valid.
-        Useful for alerting before the subscription path silently starts failing
-        over to the API. Unauthenticated — keep it off the public internet.
+        Useful for alerting before the subscription session expires and `/ask`
+        starts failing. Unauthenticated — keep it off the public internet.
       operationId: healthCli
       responses:
         '200':
@@ -277,10 +261,8 @@ components:
           maxLength: 256
           description: |
             Optional model id override. Defaults to the server's `ANTHROPIC_MODEL`.
-            Passed to `claude --model` on the subscription (CLI) path and used as the
-            billed model on the API fallback path — a more expensive id raises cost on
-            the API path. The CLI-path response reports `model: "subscription"` rather
-            than echoing the id.
+            Passed through to `claude --model` (the subscription serves it). The
+            response always reports `model: "subscription"` rather than echoing the id.
         jsonSchema:
           type: object
           description: |
@@ -299,11 +281,12 @@ components:
             plain text.
         source:
           type: string
-          enum: [cli, api]
-          description: Which path served the request.
+          enum: [cli]
+          description: Always `"cli"` — the gateway is subscription-only (no API path).
         model:
           type: string
-          description: '`"subscription"` when source is `cli`; the resolved model id when source is `api`.'
+          enum: [subscription]
+          description: Always `"subscription"`. The requested model is passed to `claude --model`, not echoed here.
         durationMs:
           type: integer
           description: Server-measured handling time in milliseconds.

@@ -7,7 +7,7 @@
 ## Project Identity
 
 **Project:** claude-gateway
-**Description:** HTTP gateway to Claude — CLI-first (local terminal + subscription), Anthropic API fallback
+**Description:** HTTP gateway to Claude — subscription-only via the local Claude CLI (OAuth); no API key, no API fallback
 **Type:** api
 **Stack:** Node.js / Express
 
