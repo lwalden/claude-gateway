@@ -314,7 +314,7 @@ describe('ask() — CLI failure triggers API fallback', () => {
 });
 
 describe('ask() — API path failures', () => {
-  test('throws when both CLI and API fail', async () => {
+  test('throws an "Anthropic API error <status>" message so the gateway can surface the upstream status', async () => {
     mockCliFailure();
     fetch.mockResolvedValue({
       ok: false,
@@ -322,7 +322,20 @@ describe('ask() — API path failures', () => {
       text: async () => 'Internal Server Error'
     });
 
-    await expect(ask({ prompt: 'test' })).rejects.toThrow(/Upstream API request failed/);
+    // Message must start with "Anthropic API error <status>" so app.js's
+    // sanitizeErrorMessage turns it into "Upstream API error (status 500)".
+    await expect(ask({ prompt: 'test' })).rejects.toThrow(/^Anthropic API error 500/);
+  });
+
+  test('carries the upstream status code in the thrown message (e.g. 429)', async () => {
+    mockCliFailure();
+    fetch.mockResolvedValue({
+      ok: false,
+      status: 429,
+      text: async () => '{"type":"error","error":{"type":"rate_limit_error"}}'
+    });
+
+    await expect(ask({ prompt: 'test' })).rejects.toThrow(/Anthropic API error 429/);
   });
 
   test('throws when CLI fails and no ANTHROPIC_API_KEY', async () => {

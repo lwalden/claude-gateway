@@ -119,7 +119,10 @@ async function ask({ prompt, system, model, jsonSchema }) {
   if (!res.ok) {
     const errBody = await res.text();
     console.error(`[claude] Anthropic API error ${res.status}:`, errBody);
-    throw new Error('Upstream API request failed');
+    // Prefix with "Anthropic API error <status>" so app.js's sanitizeErrorMessage
+    // surfaces the upstream status to the caller as "Upstream API error (status N)".
+    // The raw body is logged above but is stripped from the caller-facing message.
+    throw new Error(`Anthropic API error ${res.status}: ${errBody}`);
   }
 
   const data = await res.json();
