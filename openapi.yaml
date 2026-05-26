@@ -1,0 +1,290 @@
+openapi: 3.1.0
+info:
+  title: claude-gateway
+  version: 0.1.0
+  description: |
+    HTTP gateway to Claude. Each `POST /ask` is tried against the local Claude
+    CLI first (uses the host's Claude subscription, no per-token cost) and falls
+    back to the Anthropic API when the CLI is unavailable, times out, or returns
+    empty. The gateway is a stateless thin proxy: every request is independent
+    and there is no conversation history or session management — the caller owns
+    any multi-turn context.
+
+    ## Authentication
+    `POST /ask` requires `Authorization: Bearer <GATEWAY_API_KEY>`, a single
+    shared secret compared in constant time. The two `/health*` routes are
+    unauthenticated.
+
+    ## Request limits
+    - JSON request body is capped at **1 MB** (`413` from the framework if exceeded).
+    - `prompt` and `system` are each capped at 100,000 characters; `model` at 256.
+
+    ## Response `source`/`model`
+    - `source: "cli"` → served by the local CLI; `model` is the literal string
+      `"subscription"` (the subscription decides the underlying model).
+    - `source: "api"` → served by the Anthropic API; `model` is the resolved
+      model id (the request's `model`, or the server's `ANTHROPIC_MODEL` default).
+
+    ## Known constraints (see DECISIONS.md)
+    - `max_tokens` is fixed server-side (8192 on the API path) and is **not**
+      caller-configurable.
+    - No request/response streaming.
+    - No API versioning header or `/version` route yet — pin to this `info.version`.
+
+servers:
+  - url: http://localhost:3131
+    description: Local default (PORT defaults to 3131). Replace with your gateway's base URL.
+
+tags:
+  - name: ask
+    description: Claude invocation
+  - name: health
+    description: Unauthenticated health and credential checks
+
+paths:
+  /ask:
+    post:
+      tags: [ask]
+      summary: Ask Claude a question
+      description: |
+        Sends `prompt` (and optional `system`, `model`, `jsonSchema`) to Claude
+        via the CLI-first / API-fallback path. The `prompt` is trimmed before use.
+      operationId: ask
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AskRequest'
+            examples:
+              minimal:
+                summary: Minimal request
+                value:
+                  prompt: "Summarize the CAP theorem in one sentence."
+              withSystem:
+                summary: With a system prompt and explicit model
+                value:
+                  prompt: "List three risks."
+                  system: "You are a terse risk analyst. Reply as a bulleted list."
+                  model: "claude-opus-4-6"
+              structured:
+                summary: Structured output via JSON Schema
+                value:
+                  prompt: "Extract the name and age from: Dana is 31."
+                  jsonSchema:
+                    type: object
+                    properties:
+                      name: { type: string }
+                      age: { type: integer }
+                    required: [name, age]
+      responses:
+        '200':
+          description: Claude responded successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AskResponse'
+              examples:
+                cli:
+                  summary: Served by the local CLI
+                  value:
+                    response: "The CAP theorem states a distributed store can guarantee only two of consistency, availability, and partition tolerance."
+                    source: "cli"
+                    model: "subscription"
+                    durationMs: 1840
+                api:
+                  summary: Served by the Anthropic API fallback
+                  value:
+                    response: "..."
+                    source: "api"
+                    model: "claude-opus-4-6"
+                    durationMs: 2210
+        '400':
+          description: |
+            Validation failed. The `error` message names the offending field, e.g.
+            `prompt is required and must be a non-empty string`, or
+            `prompt exceeds maximum length of 100000 characters`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Unauthorized"
+        '500':
+          description: Server misconfiguration — `GATEWAY_API_KEY` is not set on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "GATEWAY_API_KEY is not set on the server"
+        '502':
+          description: |
+            Upstream failure (CLI unavailable and API fallback failed or disabled).
+            Anthropic response bodies are sanitized — callers never receive internal
+            detail, only a safe message such as `Upstream API error (status 429)`,
+            `CLI unavailable and ANTHROPIC_API_KEY is not set`, or
+            `CLI unavailable and API fallback is disabled`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AskError'
+
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness check
+      operationId: health
+      responses:
+        '200':
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, const: ok }
+                  service: { type: string, const: claude-gateway }
+                required: [status, service]
+              example:
+                status: ok
+                service: claude-gateway
+
+  /health/cli:
+    get:
+      tags: [health]
+      summary: Claude CLI credential expiry check
+      description: |
+        Reports how long the host's Claude CLI OAuth credentials remain valid.
+        Useful for alerting before the subscription path silently starts failing
+        over to the API.
+      operationId: healthCli
+      responses:
+        '200':
+          description: |
+            Credential status. Returns either a known status with timing fields,
+            or `unknown` with a reason when credentials can't be read or parsed.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/CliHealthKnown'
+                  - $ref: '#/components/schemas/CliHealthUnknown'
+              examples:
+                ok:
+                  value:
+                    status: ok
+                    expiresAt: 1771027200000
+                    hoursRemaining: 71.5
+                expiring:
+                  value:
+                    status: expiring
+                    expiresAt: 1764547200000
+                    hoursRemaining: 1.4
+                unknown:
+                  value:
+                    status: unknown
+                    reason: "could not read credentials file"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: 'Shared secret. Send `Authorization: Bearer <GATEWAY_API_KEY>`.'
+
+  schemas:
+    AskRequest:
+      type: object
+      additionalProperties: false
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 100000
+          description: The user prompt. Required, non-empty after trimming.
+        system:
+          type: string
+          maxLength: 100000
+          description: Optional system prompt.
+        model:
+          type: string
+          maxLength: 256
+          description: Optional model id override. Defaults to the server's ANTHROPIC_MODEL.
+        jsonSchema:
+          type: object
+          description: |
+            Optional JSON Schema enforcing structured output. When provided, the
+            `response` field contains the JSON-stringified structured result.
+
+    AskResponse:
+      type: object
+      required: [response, source, model, durationMs]
+      properties:
+        response:
+          type: string
+          description: |
+            Claude's reply. When `jsonSchema` was supplied, this is a JSON string
+            conforming to that schema; otherwise plain text.
+        source:
+          type: string
+          enum: [cli, api]
+          description: Which path served the request.
+        model:
+          type: string
+          description: '`"subscription"` when source is `cli`; the resolved model id when source is `api`.'
+        durationMs:
+          type: integer
+          description: Server-measured handling time in milliseconds.
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    AskError:
+      type: object
+      required: [error, durationMs]
+      properties:
+        error:
+          type: string
+          description: Sanitized, caller-safe error message.
+        durationMs:
+          type: integer
+
+    CliHealthKnown:
+      type: object
+      required: [status, expiresAt, hoursRemaining]
+      properties:
+        status:
+          type: string
+          enum: [ok, expiring, expired]
+          description: '`expiring` when under 2 hours remain; `expired` at or past expiry.'
+        expiresAt:
+          type: integer
+          description: Credential expiry as a Unix epoch timestamp in milliseconds.
+        hoursRemaining:
+          type: number
+          description: Hours until expiry, rounded to one decimal (may be negative if expired).
+
+    CliHealthUnknown:
+      type: object
+      required: [status, reason]
+      properties:
+        status:
+          type: string
+          const: unknown
+        reason:
+          type: string
+          description: Why the status could not be determined.
