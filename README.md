@@ -27,9 +27,11 @@ Edit `.env` with your values:
 | `ANTHROPIC_API_KEY` | No | - | API key for fallback when CLI is unavailable |
 | `ANTHROPIC_MODEL` | No | `claude-opus-4-6` | Model for API fallback calls |
 | `CLI_TIMEOUT_MS` | No | `30000` | Timeout before falling back to API |
-| `API_FALLBACK_ENABLED` | No | `true` | Set `false` to disable API fallback (returns 503) |
+| `API_FALLBACK_ENABLED` | No | `true` | Set `false` to disable API fallback; CLI failures then return 502 |
 | `PORT` | No | `3131` | Port the gateway listens on |
-| `CLAUDE_OAUTH_CLIENT_ID` | No | - | Enables automatic OAuth token refresh |
+| `CLAUDE_OAUTH_CLIENT_ID` | No | - | Claude Code OAuth client ID; enables automatic token refresh |
+| `LOG_DIR` | No | `./logs` | Directory for per-request log files |
+| `NOTIFY_WEBHOOK_URL` | No | - | Webhook POSTed when the CLI auth token expires (optional) |
 
 ## Usage
 
@@ -40,6 +42,8 @@ npm start
 # Start with file watching (auto-restart on changes)
 npm run dev
 ```
+
+The full HTTP contract is published as an OpenAPI 3.1 spec in [`openapi.yaml`](openapi.yaml) — import it into Postman/Insomnia or use it to generate a client.
 
 ### `POST /ask`
 
@@ -56,7 +60,7 @@ curl -X POST http://localhost:3131/ask \
 |-------|------|----------|-------------|
 | `prompt` | string | Yes | The prompt to send to Claude |
 | `system` | string | No | System prompt |
-| `model` | string | No | Model override |
+| `model` | string | No | Model override (API fallback path only) |
 | `jsonSchema` | object | No | JSON Schema to enforce structured output |
 
 **Response:**
@@ -74,11 +78,11 @@ curl -X POST http://localhost:3131/ask \
 
 ### `GET /health`
 
-Returns `{"status": "ok"}`. No auth required.
+Returns `{"status": "ok", "service": "claude-gateway"}`. No auth required.
 
 ### `GET /health/cli`
 
-Returns CLI auth token status (`ok`, `expiring`, `expired`). No auth required.
+Returns the CLI auth token status (`ok`, `expiring`, `expired`, or `unknown`) with expiry timing. No auth required.
 
 ## Testing
 
@@ -95,7 +99,3 @@ npm test
 5. Temp file is cleaned up regardless of outcome
 
 The temp file approach avoids PowerShell's 32KB command-line limit, which large prompts (e.g. batch remediation requests) can exceed.
-
-## License
-
-MIT
