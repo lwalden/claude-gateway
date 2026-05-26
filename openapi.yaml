@@ -15,6 +15,17 @@ info:
     shared secret compared in constant time. The two `/health*` routes are
     unauthenticated.
 
+    Rotating the secret means restarting the server with a new `GATEWAY_API_KEY`
+    — there is no multi-key or versioned-secret support, so plan rotation as a
+    brief restart.
+
+    Send the bearer token only over TLS once off localhost. The `servers` entry
+    below uses plain `http` for local use; any non-loopback deployment must
+    terminate HTTPS in front of the gateway or the shared secret travels in
+    cleartext. `GET /health/cli` is unauthenticated and reports subscription
+    credential expiry timing — restrict it to trusted callers (firewall / private
+    network) rather than exposing it publicly.
+
     ## Request limits
     - JSON request body is capped at **1 MB** (`413` from the framework if exceeded).
     - `prompt` and `system` are each capped at 100,000 characters; `model` at 256.
@@ -30,10 +41,17 @@ info:
       caller-configurable.
     - No request/response streaming.
     - No API versioning header or `/version` route yet — pin to this `info.version`.
+    - The CLI path has a server-side timeout (~30 s by default, `CLI_TIMEOUT_MS`).
+      Set your HTTP client timeout to at least 35 s to avoid spurious failures.
+    - No server-side rate limiting — callers must throttle themselves. Retrying on
+      `502` re-attempts the same paid fallback, so back off rather than hammering.
+    - When deployed with `CONTAINER_MODE=true` the CLI path is skipped entirely and
+      **every** request hits the paid Anthropic API (`source` is always `"api"`).
+      Subscription cost-isolation is lost in that mode.
 
 servers:
   - url: http://localhost:3131
-    description: Local default (PORT defaults to 3131). Replace with your gateway's base URL.
+    description: Local default (PORT defaults to 3131). Replace with your gateway's base URL; use https off localhost.
 
 tags:
   - name: ask
@@ -97,10 +115,17 @@ paths:
                 api:
                   summary: Served by the Anthropic API fallback
                   value:
-                    response: "..."
+                    response: "Three risks: regulatory exposure, vendor lock-in, and data latency."
                     source: "api"
                     model: "claude-opus-4-6"
                     durationMs: 2210
+                structured:
+                  summary: Structured output — `response` is a JSON *string* the caller must parse
+                  value:
+                    response: "{\"name\":\"Dana\",\"age\":31}"
+                    source: "cli"
+                    model: "subscription"
+                    durationMs: 1920
         '400':
           description: |
             Validation failed. The `error` message names the offending field, e.g.
@@ -118,6 +143,16 @@ paths:
                 $ref: '#/components/schemas/Error'
               example:
                 error: "Unauthorized"
+        '413':
+          description: |
+            Request body exceeded the 1 MB limit. Returned by the Express body
+            parser through its default error handler — the body is a plain-text /
+            HTML framework error, **not** the JSON `Error` envelope used by the
+            other error responses. Do not parse it as JSON.
+          content:
+            text/plain:
+              schema:
+                type: string
         '500':
           description: Server misconfiguration — `GATEWAY_API_KEY` is not set on the server.
           content:
@@ -128,15 +163,34 @@ paths:
                 error: "GATEWAY_API_KEY is not set on the server"
         '502':
           description: |
-            Upstream failure (CLI unavailable and API fallback failed or disabled).
-            Anthropic response bodies are sanitized — callers never receive internal
-            detail, only a safe message such as `Upstream API error (status 429)`,
-            `CLI unavailable and ANTHROPIC_API_KEY is not set`, or
-            `CLI unavailable and API fallback is disabled`.
+            Upstream failure — the CLI path produced nothing and the API fallback
+            failed, is disabled, or has no key. Error bodies are sanitized; callers
+            never receive internal detail. Observed messages:
+            `CLI unavailable and ANTHROPIC_API_KEY is not set`,
+            `CLI unavailable and API fallback is disabled`,
+            `CLI returned empty response`, `API returned empty response`, or — when
+            the Anthropic API itself returns a non-2xx — the generic
+            `An internal error occurred while processing your request` (the upstream
+            status code is logged server-side, not returned to the caller).
+
+            Do not retry immediately: a retry re-attempts the same paid fallback and,
+            if the cause was an upstream 429, will likely 429 again — use exponential
+            back-off.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AskError'
+        '404':
+          description: |
+            Route not found. The gateway's catch-all returns this JSON shape for any
+            unregistered path or method (e.g. a `GET /ask`). All unmatched routes
+            across the service respond with this same envelope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Not Found"
 
   /health:
     get:
@@ -149,11 +203,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status: { type: string, const: ok }
-                  service: { type: string, const: claude-gateway }
-                required: [status, service]
+                $ref: '#/components/schemas/HealthResponse'
               example:
                 status: ok
                 service: claude-gateway
@@ -165,13 +215,15 @@ paths:
       description: |
         Reports how long the host's Claude CLI OAuth credentials remain valid.
         Useful for alerting before the subscription path silently starts failing
-        over to the API.
+        over to the API. Unauthenticated — keep it off the public internet.
       operationId: healthCli
       responses:
         '200':
           description: |
-            Credential status. Returns either a known status with timing fields,
-            or `unknown` with a reason when credentials can't be read or parsed.
+            Credential status. Returns either a known status with timing fields, or
+            `unknown` with a reason when credentials can't be read or parsed.
+            `status` is `expiring` when fewer than 2 hours remain and `expired` at
+            or past expiry.
           content:
             application/json:
               schema:
@@ -199,12 +251,15 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      description: 'Shared secret. Send `Authorization: Bearer <GATEWAY_API_KEY>`.'
+      description: 'Shared secret. Send `Authorization: Bearer <GATEWAY_API_KEY>`. Use TLS off localhost.'
 
   schemas:
     AskRequest:
       type: object
-      additionalProperties: false
+      # The server reads only prompt/system/model/jsonSchema and silently IGNORES
+      # any other fields — it does not reject them. Do not rely on strict rejection
+      # of extra properties.
+      additionalProperties: true
       required: [prompt]
       properties:
         prompt:
@@ -219,7 +274,11 @@ components:
         model:
           type: string
           maxLength: 256
-          description: Optional model id override. Defaults to the server's ANTHROPIC_MODEL.
+          description: |
+            Optional model id override. Defaults to the server's `ANTHROPIC_MODEL`.
+            Applies only to the API fallback path: when `source` is `cli` this field
+            is ignored and the subscription decides the model. On the API path it
+            selects the billed model, so a more expensive model id means higher cost.
         jsonSchema:
           type: object
           description: |
@@ -233,8 +292,9 @@ components:
         response:
           type: string
           description: |
-            Claude's reply. When `jsonSchema` was supplied, this is a JSON string
-            conforming to that schema; otherwise plain text.
+            Claude's reply. When `jsonSchema` was supplied, this is a JSON *string*
+            conforming to that schema (the caller must `JSON.parse` it); otherwise
+            plain text.
         source:
           type: string
           enum: [cli, api]
@@ -246,6 +306,17 @@ components:
           type: integer
           description: Server-measured handling time in milliseconds.
 
+    HealthResponse:
+      type: object
+      required: [status, service]
+      properties:
+        status:
+          type: string
+          const: ok
+        service:
+          type: string
+          const: claude-gateway
+
     Error:
       type: object
       required: [error]
@@ -255,6 +326,10 @@ components:
 
     AskError:
       type: object
+      description: |
+        Error envelope for `502` responses. Same shape as `Error` but adds
+        `durationMs`, so a caller can tell a slow-then-failed attempt from an
+        immediate rejection.
       required: [error, durationMs]
       properties:
         error:
