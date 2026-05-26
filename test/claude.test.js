@@ -81,6 +81,18 @@ describe('ask() — CLI path', () => {
     expect(args).toContain('-EncodedCommand');
   });
 
+  test('does NOT pass --bare (which would disable OAuth) but keeps --no-session-persistence', async () => {
+    mockCliSuccess('response');
+
+    await ask({ prompt: 'test' });
+    const [, args] = mockExecFileAsync.mock.calls[0];
+    const decoded = Buffer.from(args[args.indexOf('-EncodedCommand') + 1], 'base64').toString('utf16le');
+    // --bare forces ANTHROPIC_API_KEY-only auth and never reads the OAuth
+    // subscription, silently defeating the CLI-first path. It must never appear.
+    expect(decoded).not.toContain('--bare');
+    expect(decoded).toContain('--no-session-persistence');
+  });
+
   test('encodes system prompt into CLI command when provided', async () => {
     mockCliSuccess('response');
 

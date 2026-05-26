@@ -60,7 +60,7 @@ curl -X POST http://localhost:3131/ask \
 |-------|------|----------|-------------|
 | `prompt` | string | Yes | The prompt to send to Claude |
 | `system` | string | No | System prompt |
-| `model` | string | No | Model override (API fallback path only) |
+| `model` | string | No | Model override; passed to the CLI and selects the billed model on API fallback |
 | `jsonSchema` | object | No | JSON Schema to enforce structured output |
 
 **Response:**
