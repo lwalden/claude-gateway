@@ -169,9 +169,9 @@ paths:
             `CLI unavailable and ANTHROPIC_API_KEY is not set`,
             `CLI unavailable and API fallback is disabled`,
             `CLI returned empty response`, `API returned empty response`, or — when
-            the Anthropic API itself returns a non-2xx — the generic
-            `An internal error occurred while processing your request` (the upstream
-            status code is logged server-side, not returned to the caller).
+            the Anthropic API itself returns a non-2xx — `Upstream API error
+            (status <N>)` carrying the upstream HTTP status (the raw upstream body is
+            logged server-side, never returned to the caller).
 
             Do not retry immediately: a retry re-attempts the same paid fallback and,
             if the cause was an upstream 429, will likely 429 again — use exponential
