@@ -31,8 +31,9 @@ info:
     - `prompt` and `system` are each capped at 100,000 characters; `model` at 256.
 
     ## Response `source`/`model`
-    - `source: "cli"` → served by the local CLI; `model` is the literal string
-      `"subscription"` (the subscription decides the underlying model).
+    - `source: "cli"` → served by the local CLI via the OAuth subscription;
+      `model` is reported as `"subscription"` (the requested model is passed to
+      `claude --model`, not echoed back).
     - `source: "api"` → served by the Anthropic API; `model` is the resolved
       model id (the request's `model`, or the server's `ANTHROPIC_MODEL` default).
 
@@ -276,9 +277,10 @@ components:
           maxLength: 256
           description: |
             Optional model id override. Defaults to the server's `ANTHROPIC_MODEL`.
-            Applies only to the API fallback path: when `source` is `cli` this field
-            is ignored and the subscription decides the model. On the API path it
-            selects the billed model, so a more expensive model id means higher cost.
+            Passed to `claude --model` on the subscription (CLI) path and used as the
+            billed model on the API fallback path — a more expensive id raises cost on
+            the API path. The CLI-path response reports `model: "subscription"` rather
+            than echoing the id.
         jsonSchema:
           type: object
           description: |

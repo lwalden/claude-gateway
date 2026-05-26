@@ -47,7 +47,10 @@ async function ask({ prompt, system, model, jsonSchema }) {
     try {
       fs.writeFileSync(tmpFile, prompt, 'utf8');
 
-      let cliCmd = `Get-Content "${tmpFile}" -Raw | claude -p --model "${escapePowerShell(resolvedModel)}" --bare --no-session-persistence`;
+      // Do NOT add --bare: it forces ANTHROPIC_API_KEY/apiKeyHelper auth and never
+      // reads the OAuth subscription (per `claude --help`), which silently defeats
+      // the CLI-first subscription path. See DECISIONS.md.
+      let cliCmd = `Get-Content "${tmpFile}" -Raw | claude -p --model "${escapePowerShell(resolvedModel)}" --no-session-persistence`;
       if (system) cliCmd += ` --append-system-prompt "${escapePowerShell(system)}"`;
       if (jsonSchema) {
         const schemaStr = typeof jsonSchema === 'string' ? jsonSchema : JSON.stringify(jsonSchema);
