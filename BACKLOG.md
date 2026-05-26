@@ -14,3 +14,8 @@
 | B-006 | feature | Retry logic with exponential backoff for transient CLI/API failures | strategy-roadmap Phase 3 | 2026-04-12 |
 | B-007 | feature | Graceful degradation — fall back to API when CLI is unavailable (already partial; extend) | strategy-roadmap Phase 3 | 2026-04-12 |
 | B-008 | feature | Optional rate limiting per caller/API key | strategy-roadmap Phase 3 | 2026-04-12 |
+| B-009 | defect | Authenticate or coarsen /health/cli — unauthenticated endpoint leaks credential expiry timing | security self-review #28 (issue #30) | 2026-05-25 |
+
+### B-009: Authenticate or coarsen /health/cli — unauthenticated endpoint leaks credential expiry timing
+
+Unauthenticated GET /health/cli returns subscription credential expiry timing (expiresAt epoch ms, hoursRemaining, status). Lets any networked caller learn when credentials expire — enables timing attacks toward the paid API path and fingerprints the gateway as subscription-backed. Medium severity (info disclosure). Options: (1) gate behind bearerAuth, (2) coarsen payload to status-only, (3) document-and-firewall (current). Keep GET /health open for liveness. Tracked: https://github.com/lwalden/claude-gateway/issues/30 — from self-review of PR #28.
