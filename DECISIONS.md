@@ -65,6 +65,9 @@ Moot since the API path was removed (see "Subscription-only — no API key"). Th
 ### Cross-platform (Unix) CLI support | 2026-04-12 | Status: Revisit
 Deferred. Current implementation is Windows-only due to the PowerShell `-EncodedCommand` choice. Why defer: no Unix runtime currently depends on the gateway. Revisit when: any consumer needs to run the gateway on Linux/macOS (e.g., cloud deployment, developer on a non-Windows machine).
 
+### /health/cli: optional-auth tiered payload | 2026-07-22 | Status: Active
+Chose: coarse status-only for unauthenticated callers + full expiry timing behind the existing bearer token, over (a) fully gating the route behind auth, (b) status-only for everyone, or (c) document-and-firewall (the prior state, B-009 / issue #30). Why: keeps an unauthenticated liveness-ish signal for dumb monitors while removing the credential-expiry timing leak; the n8n expiry-alert workflow keeps `hoursRemaining` by adding the Authorization header it already has for `/ask`. A present-but-wrong token 401s instead of silently degrading, so consumer misconfiguration is visible. Tradeoff: breaking change for unauthenticated consumers that read the timing fields — contract bumped to 0.3.0.
+
 ---
 
 ## Known Debt

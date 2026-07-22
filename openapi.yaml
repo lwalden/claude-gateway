@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: claude-gateway
-  version: 0.2.0
+  version: 0.3.0
   description: |
     HTTP gateway to Claude. Each `POST /ask` runs the local Claude CLI using the
     host's Claude **subscription** (OAuth). There is **no Anthropic API-key path**
@@ -22,9 +22,9 @@ info:
     Send the bearer token only over TLS once off localhost. The `servers` entry
     below uses plain `http` for local use; any non-loopback deployment must
     terminate HTTPS in front of the gateway or the shared secret travels in
-    cleartext. `GET /health/cli` is unauthenticated and reports subscription
-    credential expiry timing — restrict it to trusted callers (firewall / private
-    network) rather than exposing it publicly.
+    cleartext. `GET /health/cli` answers unauthenticated callers with a coarse
+    status only; subscription credential expiry timing requires the gateway
+    bearer token.
 
     ## Request limits
     - JSON request body is capped at **1 MB** (`413` from the framework if exceeded).
@@ -198,38 +198,52 @@ paths:
       tags: [health]
       summary: Claude CLI credential expiry check
       description: |
-        Reports how long the host's Claude CLI OAuth credentials remain valid.
+        Reports whether the host's Claude CLI OAuth credentials are valid.
         Useful for alerting before the subscription session expires and `/ask`
-        starts failing. Unauthenticated — keep it off the public internet.
+        starts failing. Auth is optional and controls detail: without a token
+        the response is status-only (`ok` / `expired` / `unknown`); with the
+        gateway bearer token it includes expiry timing (`expiresAt`,
+        `hoursRemaining`) or an `unknown` reason. A present-but-invalid token
+        is rejected with `401` rather than degraded to the coarse payload.
       operationId: healthCli
+      security:
+        - {}
+        - bearerAuth: []
       responses:
         '200':
           description: |
-            Credential status. Returns either a known status with timing fields, or
-            `unknown` with a reason when credentials can't be read or parsed.
-            `status` is `expiring` when fewer than 2 hours remain and `expired` at
-            or past expiry.
+            Credential status. Unauthenticated: `CliHealthCoarse` (status only).
+            Authenticated: a known status with timing fields, or `unknown` with
+            a reason when credentials can't be read or parsed. `status` is
+            `expired` at or past expiry.
           content:
             application/json:
               schema:
                 oneOf:
+                  - $ref: '#/components/schemas/CliHealthCoarse'
                   - $ref: '#/components/schemas/CliHealthKnown'
                   - $ref: '#/components/schemas/CliHealthUnknown'
               examples:
-                ok:
+                coarse:
+                  value:
+                    status: ok
+                authenticatedOk:
                   value:
                     status: ok
                     expiresAt: 1771027200000
                     hoursRemaining: 71.5
-                expiring:
-                  value:
-                    status: expiring
-                    expiresAt: 1764547200000
-                    hoursRemaining: 1.4
-                unknown:
+                authenticatedUnknown:
                   value:
                     status: unknown
                     reason: "could not read credentials file"
+        '401':
+          description: An `Authorization` header was sent but the token is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Unauthorized"
 
 components:
   securitySchemes:
@@ -323,14 +337,23 @@ components:
         durationMs:
           type: integer
 
+    CliHealthCoarse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, expired, unknown]
+          description: Coarse credential status served to unauthenticated callers. No timing or reason detail.
+
     CliHealthKnown:
       type: object
       required: [status, expiresAt, hoursRemaining]
       properties:
         status:
           type: string
-          enum: [ok, expiring, expired]
-          description: '`expiring` when under 2 hours remain; `expired` at or past expiry.'
+          enum: [ok, expired]
+          description: '`expired` at or past expiry.'
         expiresAt:
           type: integer
           description: Credential expiry as a Unix epoch timestamp in milliseconds.

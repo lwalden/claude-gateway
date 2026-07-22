@@ -80,7 +80,7 @@ Returns `{"status": "ok", "service": "claude-gateway"}`. No auth required.
 
 ### `GET /health/cli`
 
-Returns the CLI auth token status (`ok`, `expiring`, `expired`, or `unknown`) with expiry timing. No auth required.
+Returns the CLI auth token status (`ok`, `expired`, or `unknown`). Unauthenticated callers get the status only; send `Authorization: Bearer <GATEWAY_API_KEY>` to also get expiry timing (`expiresAt`, `hoursRemaining`) or the `unknown` reason. A wrong token gets `401`.
 
 ## Testing
 
