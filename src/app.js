@@ -49,22 +49,37 @@ function createApp({ gatewayApiKey } = {}) {
     res.json({ status: 'ok', service: 'claude-gateway' });
   });
 
-  // --- CLI auth health check (no auth required) ---
+  // --- CLI auth health check (coarse without auth) ---
+  // Expiry timing (expiresAt/hoursRemaining/reason) is an information leak to
+  // unauthenticated callers (B-009 / issue #30): it reveals when the gateway's
+  // subscription credentials lapse. Anonymous callers get status only; the full
+  // payload requires the gateway bearer token. A present-but-wrong token is a
+  // 401 so a misconfigured consumer fails loudly instead of silently degrading.
   app.get('/health/cli', (req, res) => {
+    const auth = req.headers['authorization'] || '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+    const authed = Boolean(apiKey) && tokensMatch(token, apiKey);
+    if (auth && !authed) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
     try {
       const credsPath = path.join(os.homedir(), '.claude', '.credentials.json');
       const raw = fs.readFileSync(credsPath, 'utf8');
       const creds = JSON.parse(raw);
       const expiresAt = creds?.claudeAiOauth?.expiresAt;
       if (!expiresAt) {
-        return res.json({ status: 'unknown', reason: 'expiresAt not found in credentials' });
+        return res.json(authed
+          ? { status: 'unknown', reason: 'expiresAt not found in credentials' }
+          : { status: 'unknown' });
       }
       const nowMs = Date.now();
       const hoursRemaining = Math.round((expiresAt - nowMs) / 1000 / 60 / 60 * 10) / 10;
       const status = hoursRemaining <= 0 ? 'expired' : 'ok';
-      res.json({ status, expiresAt, hoursRemaining });
+      res.json(authed ? { status, expiresAt, hoursRemaining } : { status });
     } catch (err) {
-      res.json({ status: 'unknown', reason: 'could not read credentials file' });
+      res.json(authed
+        ? { status: 'unknown', reason: 'could not read credentials file' }
+        : { status: 'unknown' });
     }
   });
 

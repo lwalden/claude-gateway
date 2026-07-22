@@ -242,6 +242,72 @@ describe('/health/cli endpoint status values', () => {
     });
   });
 
+  test('unauthenticated response is status-only (no expiry timing leak)', () => {
+    jest.resetModules();
+    jest.mock('fs', () => ({
+      ...jest.requireActual('fs'),
+      readFileSync: (p, enc) => {
+        if (p.includes('.credentials.json')) {
+          return JSON.stringify({ claudeAiOauth: { expiresAt: Date.now() + 3 * 60 * 60 * 1000 } });
+        }
+        return jest.requireActual('fs').readFileSync(p, enc);
+      }
+    }));
+    const { createApp } = require('../src/app');
+    const app = createApp({ gatewayApiKey: 'k' });
+    return request(app).get('/health/cli').expect(200).expect((res) => {
+      expect(res.body).toEqual({ status: 'ok' });
+      expect(res.body.expiresAt).toBeUndefined();
+      expect(res.body.hoursRemaining).toBeUndefined();
+    });
+  });
+
+  test('unauthenticated unknown status carries no reason detail', () => {
+    jest.resetModules();
+    jest.mock('fs', () => ({
+      ...jest.requireActual('fs'),
+      readFileSync: (p, enc) => {
+        if (p.includes('.credentials.json')) {
+          throw new Error('ENOENT');
+        }
+        return jest.requireActual('fs').readFileSync(p, enc);
+      }
+    }));
+    const { createApp } = require('../src/app');
+    const app = createApp({ gatewayApiKey: 'k' });
+    return request(app).get('/health/cli').expect(200).expect((res) => {
+      expect(res.body).toEqual({ status: 'unknown' });
+    });
+  });
+
+  test('bearer-authenticated response includes expiry timing', () => {
+    jest.resetModules();
+    const mockExpiresAt = Date.now() + 3 * 60 * 60 * 1000;
+    jest.mock('fs', () => ({
+      ...jest.requireActual('fs'),
+      readFileSync: (p, enc) => {
+        if (p.includes('.credentials.json')) {
+          return JSON.stringify({ claudeAiOauth: { expiresAt: mockExpiresAt } });
+        }
+        return jest.requireActual('fs').readFileSync(p, enc);
+      }
+    }));
+    const { createApp } = require('../src/app');
+    const app = createApp({ gatewayApiKey: 'k' });
+    return request(app).get('/health/cli').set('Authorization', 'Bearer k').expect(200).expect((res) => {
+      expect(res.body.status).toBe('ok');
+      expect(res.body.expiresAt).toBe(mockExpiresAt);
+      expect(typeof res.body.hoursRemaining).toBe('number');
+    });
+  });
+
+  test('wrong bearer token gets 401, not a silently coarse payload', () => {
+    jest.resetModules();
+    const { createApp } = require('../src/app');
+    const app = createApp({ gatewayApiKey: 'k' });
+    return request(app).get('/health/cli').set('Authorization', 'Bearer wrong').expect(401);
+  });
+
   test('never returns expiring status', () => {
     jest.resetModules();
     jest.mock('fs', () => ({

@@ -47,11 +47,13 @@ A missing or invalid token returns `401`.
 |--------|------|------|---------|
 | `POST` | `/ask` | Bearer | Ask Claude a question |
 | `GET` | `/health` | none | Liveness check |
-| `GET` | `/health/cli` | none | Subscription credential status (is the session valid / expiring?) |
+| `GET` | `/health/cli` | optional Bearer | Subscription credential status. Without auth: status only (`ok`/`expired`/`unknown`). With the bearer token: adds expiry timing (`expiresAt`, `hoursRemaining`). |
 
 The full machine-readable contract is **[`openapi.yaml`](../openapi.yaml)** —
 import it into Postman/Insomnia or generate a typed client. Pin to its
-`info.version` (currently `0.2.0`); `source`/`model` values changed at `0.2.0`.
+`info.version` (currently `0.3.0`); `source`/`model` values changed at `0.2.0`,
+and at `0.3.0` unauthenticated `/health/cli` responses were coarsened to
+status-only (send the bearer token to keep the timing fields).
 
 ---
 
