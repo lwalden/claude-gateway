@@ -7,6 +7,7 @@ const os = require('os');
 const express = require('express');
 const { ask } = require('./claude');
 const { log, requestLogger } = require('./logger');
+const { getMetrics } = require('./metrics');
 
 const MAX_PROMPT_LENGTH = 100_000; // ~100K chars — well above normal use, prevents abuse
 const MAX_SYSTEM_LENGTH = 100_000;
@@ -82,6 +83,14 @@ function createApp({ gatewayApiKey } = {}) {
         : { status: 'unknown' });
     }
   });
+
+  // --- Metrics (last 24h of gateway traffic, auth required like /ask) ---
+  app.get('/metrics', requireAuth, (req, res) => {
+    res.json(getMetrics());
+  });
+
+  // --- Status dashboard (static, served at the site root) ---
+  app.use(express.static(path.join(__dirname, 'public')));
 
   // --- Main endpoint ---
   app.post('/ask', requireAuth, async (req, res) => {

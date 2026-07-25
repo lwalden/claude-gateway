@@ -101,6 +101,30 @@ describe('POST /ask — error propagation', () => {
   });
 });
 
+describe('GET /metrics', () => {
+  test('returns 401 without auth', async () => {
+    const res = await request(app).get('/metrics');
+    expect(res.status).toBe(401);
+  });
+
+  test('returns metrics shape with auth', async () => {
+    const res = await authed(request(app).get('/metrics'));
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('requests.total');
+    expect(res.body).toHaveProperty('requests.failures');
+    expect(res.body).toHaveProperty('generatedAt');
+    expect(res.body).toHaveProperty('windowHours', 24);
+  });
+});
+
+describe('GET / (status dashboard)', () => {
+  test('serves the static dashboard HTML without auth', async () => {
+    const res = await request(app).get('/');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/html/);
+  });
+});
+
 describe('Unknown routes', () => {
   test('returns JSON 404 for unregistered paths', async () => {
     const res = await request(app).get('/nonexistent');
