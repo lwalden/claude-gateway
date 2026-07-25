@@ -60,7 +60,10 @@ Register-ScheduledTask -TaskName 'ClaudeGatewayStartup' -Action $action `
 ```
 
 `ExecutionTimeLimit` is set to zero (unlimited) since this is a persistent server,
-not a short-lived task. `scripts/start-gateway.ps1` (invoked by the VBS) skips
+not a short-lived task. `scripts/start-gateway.ps1` (invoked by the VBS) also opens
+the status dashboard (`http://localhost:<PORT>/`) in your default browser once the
+gateway responds healthy — only the `node` process itself runs hidden; the
+dashboard tab is meant to be visible. It skips
 launching if the configured `PORT` is already listening, so a stray re-trigger
 doesn't spawn a second instance. Requires a `.env` with `GATEWAY_API_KEY` set (see
 Setup above) and the Claude CLI signed in under the logged-in user's account.
