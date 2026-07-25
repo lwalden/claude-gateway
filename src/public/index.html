@@ -189,6 +189,32 @@
     color: var(--text-muted);
     margin: -4px 0 16px;
   }
+
+  .test-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .test-section .hint { margin: 0; }
+  .test-result {
+    margin-bottom: 20px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .test-result.success { border-color: var(--good); }
+  .test-result.error { border-color: var(--critical); color: var(--critical); }
+  .test-result .meta {
+    color: var(--text-muted);
+    font-size: 11px;
+    margin-top: 8px;
+    font-variant-numeric: tabular-nums;
+  }
 </style>
 </head>
 <body>
@@ -207,6 +233,12 @@
     <button class="refresh-btn" id="refreshBtn">Refresh</button>
   </div>
   <div class="hint" id="keyHint"></div>
+
+  <div class="test-section">
+    <button class="refresh-btn" id="testConnBtn">Send test prompt</button>
+    <span class="hint">Sends a test prompt to <code>/ask</code> and shows the reply</span>
+  </div>
+  <div class="test-result" id="testResult" hidden></div>
 
   <div class="tiles">
     <div class="tile">
@@ -245,6 +277,7 @@
 (function () {
   const KEY_STORAGE = 'claude-gateway-api-key';
   const REFRESH_MS = 10000;
+  const TEST_PROMPT = 'testing connection - what model is repsonding?';
 
   const el = {
     badge: document.getElementById('statusBadge'),
@@ -253,6 +286,8 @@
     saveKeyBtn: document.getElementById('saveKeyBtn'),
     refreshBtn: document.getElementById('refreshBtn'),
     keyHint: document.getElementById('keyHint'),
+    testConnBtn: document.getElementById('testConnBtn'),
+    testResult: document.getElementById('testResult'),
     tileTotal: document.getElementById('tileTotal'),
     tileFailures: document.getElementById('tileFailures'),
     tileSuccessRate: document.getElementById('tileSuccessRate'),
@@ -269,6 +304,50 @@
     refresh();
   });
   el.refreshBtn.addEventListener('click', refresh);
+  el.testConnBtn.addEventListener('click', runTestConnection);
+
+  function showTestResult(kind, text, meta) {
+    el.testResult.hidden = false;
+    el.testResult.className = 'test-result' + (kind ? ' ' + kind : '');
+    el.testResult.textContent = text;
+    if (meta) {
+      const metaEl = document.createElement('div');
+      metaEl.className = 'meta';
+      metaEl.textContent = meta;
+      el.testResult.appendChild(metaEl);
+    }
+  }
+
+  async function runTestConnection() {
+    const apiKey = localStorage.getItem(KEY_STORAGE) || '';
+    if (!apiKey) {
+      showTestResult('error', 'Enter your gateway API key above first.');
+      return;
+    }
+
+    el.testConnBtn.disabled = true;
+    el.testConnBtn.textContent = 'Sending…';
+    showTestResult(null, 'Waiting for response…');
+
+    try {
+      const res = await fetch('/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey },
+        body: JSON.stringify({ prompt: TEST_PROMPT }),
+      });
+      const body = await res.json().catch(() => null);
+      if (res.ok && body) {
+        showTestResult('success', body.response, `source=${body.source} · model=${body.model} · ${fmtMs(body.durationMs)}`);
+      } else {
+        showTestResult('error', (body && body.error) || `HTTP ${res.status}`);
+      }
+    } catch (err) {
+      showTestResult('error', 'Request failed: ' + err.message);
+    } finally {
+      el.testConnBtn.disabled = false;
+      el.testConnBtn.textContent = 'Send test prompt';
+    }
+  }
 
   function setStatus(status, text) {
     el.badge.dataset.status = status;
