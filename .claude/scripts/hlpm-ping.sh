@@ -18,7 +18,7 @@ EVENT="${1:-}"
 
 [[ "${HLPM_PING_DISABLED:-0}" == "1" ]] && exit 0
 
-HLPM_DIR="D:/Source/highest-level-project-management"
+HLPM_DIR="C:/repos/highest-level-project-management"
 LOG_FILE="$HLPM_DIR/events.jsonl"
 MAX_LINES=10000
 
