@@ -43,6 +43,31 @@ npm run dev
 
 The full HTTP contract is published as an OpenAPI 3.1 spec in [`openapi.yaml`](openapi.yaml) — import it into Postman/Insomnia or use it to generate a client.
 
+## Autostart on boot (Windows)
+
+To have the gateway start automatically at login, register a Scheduled Task that
+runs `scripts/start-gateway-hidden.vbs` (a headless wrapper — no console window,
+no focus steal) at logon:
+
+```powershell
+$action = New-ScheduledTaskAction -Execute 'wscript.exe' `
+  -Argument '//nologo "C:\repos\claude-gateway\scripts\start-gateway-hidden.vbs"'
+$trigger = New-ScheduledTaskTrigger -AtLogOn
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
+  -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
+Register-ScheduledTask -TaskName 'ClaudeGatewayStartup' -Action $action `
+  -Trigger $trigger -Settings $settings -RunLevel Limited
+```
+
+`ExecutionTimeLimit` is set to zero (unlimited) since this is a persistent server,
+not a short-lived task. `scripts/start-gateway.ps1` (invoked by the VBS) also opens
+the status dashboard (`http://localhost:<PORT>/`) in your default browser once the
+gateway responds healthy — only the `node` process itself runs hidden; the
+dashboard tab is meant to be visible. It skips
+launching if the configured `PORT` is already listening, so a stray re-trigger
+doesn't spawn a second instance. Requires a `.env` with `GATEWAY_API_KEY` set (see
+Setup above) and the Claude CLI signed in under the logged-in user's account.
+
 ### `POST /ask`
 
 ```bash
