@@ -1,3 +1,3 @@
 @echo off
-cd /d D:\Source\claude-gateway
+cd /d C:\repos\claude-gateway
 node src\index.js
