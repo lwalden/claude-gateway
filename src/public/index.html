@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>claude-gateway status</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page:        #f9f9f7;
+    --surface:     #fcfcfb;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:    #e1e0d9;
+    --border:      rgba(11,11,11,0.10);
+    --good:        #0ca30c;
+    --warning:     #fab219;
+    --serious:     #ec835a;
+    --critical:    #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page:        #0d0d0d;
+      --surface:     #1a1a19;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:    #2c2c2a;
+      --border:      rgba(255,255,255,0.10);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page:        #0d0d0d;
+    --surface:     #1a1a19;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:    #2c2c2a;
+    --border:      rgba(255,255,255,0.10);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page);
+    color: var(--text-primary);
+  }
+  .page {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 28px 20px 60px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+  }
+  h1 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0;
+  }
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--text-muted);
+  }
+  .status-badge[data-status="online"] .status-dot { background: var(--good); }
+  .status-badge[data-status="unhealthy"] .status-dot { background: var(--warning); }
+  .status-badge[data-status="offline"] .status-dot { background: var(--critical); }
+  .status-badge[data-status="online"] { color: var(--good); }
+  .status-badge[data-status="unhealthy"] { color: #a86a00; }
+  .status-badge[data-status="offline"] { color: var(--critical); }
+
+  .meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-bottom: 20px;
+  }
+
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .tile-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+  }
+  .tile-value {
+    font-size: 28px;
+    font-weight: 600;
+    line-height: 1.1;
+  }
+  .tile-value.good { color: var(--good); }
+  .tile-value.critical { color: var(--critical); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    font-size: 13px;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--gridline);
+  }
+  th {
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+  tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 24px 0 8px;
+  }
+
+  .empty {
+    color: var(--text-muted);
+    font-size: 13px;
+    padding: 12px;
+  }
+
+  .keybar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  .keybar input {
+    flex: 1;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-primary);
+    font-size: 13px;
+  }
+  .keybar button, .refresh-btn {
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .keybar button:hover, .refresh-btn:hover { border-color: var(--text-muted); }
+  .hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: -4px 0 16px;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>claude-gateway</h1>
+    <span class="status-badge" data-status="offline" id="statusBadge">
+      <span class="status-dot"></span>
+      <span id="statusText">Checking…</span>
+    </span>
+  </header>
+
+  <div class="keybar">
+    <input id="apiKeyInput" type="password" placeholder="Gateway API key (kept in this browser only)">
+    <button id="saveKeyBtn">Save</button>
+    <button class="refresh-btn" id="refreshBtn">Refresh</button>
+  </div>
+  <div class="hint" id="keyHint"></div>
+
+  <div class="tiles">
+    <div class="tile">
+      <div class="tile-label">Requests (24h)</div>
+      <div class="tile-value" id="tileTotal">–</div>
+    </div>
+    <div class="tile">
+      <div class="tile-label">Failures (24h)</div>
+      <div class="tile-value" id="tileFailures">–</div>
+    </div>
+    <div class="tile">
+      <div class="tile-label">Success rate</div>
+      <div class="tile-value" id="tileSuccessRate">–</div>
+    </div>
+    <div class="tile">
+      <div class="tile-label">Avg duration</div>
+      <div class="tile-value" id="tileAvgDuration">–</div>
+    </div>
+  </div>
+
+  <div class="section-title">By endpoint (24h)</div>
+  <table id="byPathTable">
+    <thead>
+      <tr><th>Path</th><th class="num">Requests</th><th class="num">Failures</th></tr>
+    </thead>
+    <tbody id="byPathBody"></tbody>
+  </table>
+
+  <div class="meta-row">
+    <span id="lastRequest"></span>
+    <span id="lastUpdated"></span>
+  </div>
+</div>
+
+<script>
+(function () {
+  const KEY_STORAGE = 'claude-gateway-api-key';
+  const REFRESH_MS = 10000;
+
+  const el = {
+    badge: document.getElementById('statusBadge'),
+    statusText: document.getElementById('statusText'),
+    apiKeyInput: document.getElementById('apiKeyInput'),
+    saveKeyBtn: document.getElementById('saveKeyBtn'),
+    refreshBtn: document.getElementById('refreshBtn'),
+    keyHint: document.getElementById('keyHint'),
+    tileTotal: document.getElementById('tileTotal'),
+    tileFailures: document.getElementById('tileFailures'),
+    tileSuccessRate: document.getElementById('tileSuccessRate'),
+    tileAvgDuration: document.getElementById('tileAvgDuration'),
+    byPathBody: document.getElementById('byPathBody'),
+    lastRequest: document.getElementById('lastRequest'),
+    lastUpdated: document.getElementById('lastUpdated'),
+  };
+
+  el.apiKeyInput.value = localStorage.getItem(KEY_STORAGE) || '';
+
+  el.saveKeyBtn.addEventListener('click', () => {
+    localStorage.setItem(KEY_STORAGE, el.apiKeyInput.value.trim());
+    refresh();
+  });
+  el.refreshBtn.addEventListener('click', refresh);
+
+  function setStatus(status, text) {
+    el.badge.dataset.status = status;
+    el.statusText.textContent = text;
+  }
+
+  function fmtMs(ms) {
+    if (ms === null || ms === undefined) return '–';
+    return ms >= 1000 ? (ms / 1000).toFixed(1) + 's' : Math.round(ms) + 'ms';
+  }
+
+  function fmtAgo(iso) {
+    if (!iso) return 'no requests yet';
+    const diffMs = Date.now() - new Date(iso).getTime();
+    if (diffMs < 0) return 'just now';
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'last request just now';
+    if (mins < 60) return `last request ${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `last request ${hours}h ago`;
+    return `last request ${Math.floor(hours / 24)}d ago`;
+  }
+
+  async function fetchJson(url, apiKey) {
+    const headers = apiKey ? { Authorization: 'Bearer ' + apiKey } : {};
+    const res = await fetch(url, { headers, cache: 'no-store' });
+    return { ok: res.ok, status: res.status, body: res.ok ? await res.json() : null };
+  }
+
+  async function refresh() {
+    const apiKey = localStorage.getItem(KEY_STORAGE) || '';
+    el.lastUpdated.textContent = 'checking…';
+
+    let health;
+    try {
+      health = await fetchJson('/health', '');
+    } catch {
+      setStatus('offline', 'Offline');
+      el.lastUpdated.textContent = 'gateway unreachable';
+      return;
+    }
+    if (!health.ok) {
+      setStatus('offline', 'Offline');
+      el.lastUpdated.textContent = 'gateway unreachable';
+      return;
+    }
+
+    let cli = { ok: false, body: null };
+    try { cli = await fetchJson('/health/cli', apiKey); } catch { /* treated as unknown below */ }
+
+    let metrics = { ok: false, status: 0, body: null };
+    try { metrics = await fetchJson('/metrics', apiKey); } catch { /* handled below */ }
+
+    if (metrics.status === 401) {
+      el.keyHint.textContent = apiKey
+        ? 'That API key was rejected by the gateway.'
+        : 'Enter the gateway API key above to load metrics and auth status.';
+    } else {
+      el.keyHint.textContent = '';
+    }
+
+    // Determine overall status
+    const cliStatus = cli.ok && cli.body ? cli.body.status : 'unknown';
+    if (cliStatus === 'expired') {
+      setStatus('unhealthy', 'Unhealthy — CLI auth expired');
+    } else if (metrics.ok && metrics.body.requests.total > 0 && metrics.body.requests.successRatePct !== null && metrics.body.requests.successRatePct < 80) {
+      setStatus('unhealthy', `Unhealthy — ${metrics.body.requests.successRatePct}% success (24h)`);
+    } else {
+      setStatus('online', 'Online');
+    }
+
+    if (metrics.ok) {
+      const m = metrics.body;
+      el.tileTotal.textContent = m.requests.total.toLocaleString();
+      el.tileFailures.textContent = m.requests.failures.toLocaleString();
+      el.tileFailures.className = 'tile-value' + (m.requests.failures > 0 ? ' critical' : '');
+      el.tileSuccessRate.textContent = m.requests.successRatePct === null ? '–' : m.requests.successRatePct + '%';
+      el.tileAvgDuration.textContent = fmtMs(m.avgDurationMs);
+
+      const paths = Object.entries(m.byPath).sort((a, b) => b[1].total - a[1].total);
+      el.byPathBody.innerHTML = paths.length
+        ? paths.map(([p, s]) => `<tr><td>${escapeHtml(p)}</td><td class="num">${s.total}</td><td class="num">${s.failures}</td></tr>`).join('')
+        : '<tr><td colspan="3" class="empty">No requests in the last 24h</td></tr>';
+
+      el.lastRequest.textContent = fmtAgo(m.lastRequestAt);
+    } else {
+      el.tileTotal.textContent = '–';
+      el.tileFailures.textContent = '–';
+      el.tileFailures.className = 'tile-value';
+      el.tileSuccessRate.textContent = '–';
+      el.tileAvgDuration.textContent = '–';
+      el.byPathBody.innerHTML = '<tr><td colspan="3" class="empty">Enter API key to view metrics</td></tr>';
+      el.lastRequest.textContent = '';
+    }
+
+    el.lastUpdated.textContent = 'updated ' + new Date().toLocaleTimeString();
+  }
+
+  function escapeHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  refresh();
+  setInterval(refresh, REFRESH_MS);
+})();
+</script>
+</body>
+</html>
